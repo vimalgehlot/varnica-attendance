@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="VJ Attendance">
+<meta name="theme-color" content="#B8955A">
+<title>Varnica Jewels — Staff Attendance</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap');
+:root{
+  --brand:#B8955A;--brand-light:#D4B483;--brand-dark:#8B6A35;--brand-deep:#5C4220;
+  --blush:#F8EEE8;--blush2:#F2E4DA;--blush3:#E8D4C8;
+  --dark:#1A1008;--surface:#FFFAF7;--surface2:#FFF5EF;
+  --text:#2C1A0A;--text2:#7A5C3A;--text3:#B89878;
+  --green:#4A8C5C;--green-bg:#EBF5EE;--red:#C44B35;--red-bg:#FCECEA;
+  --orange:#C47A20;--orange-bg:#FEF3E2;--blue:#3A6EA8;--blue-bg:#EAF0F8;
+  --radius:16px;--radius-sm:10px;
+  --shadow:0 4px 24px rgba(184,149,90,0.12);--shadow-lg:0 8px 48px rgba(184,149,90,0.18);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);}
+
+/* WATERMARK */
+.watermark{position:fixed;inset:0;z-index:0;pointer-events:none;display:flex;align-items:center;justify-content:center;}
+.watermark img{width:70%;max-width:400px;opacity:0.045;filter:sepia(1) saturate(0.5);transform:rotate(-15deg);}
+.bg-pattern{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:radial-gradient(circle at 20% 20%,rgba(184,149,90,0.07) 0%,transparent 50%),radial-gradient(circle at 80% 80%,rgba(184,149,90,0.05) 0%,transparent 50%);}
+.app{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+
+/* LOADING */
+.loading-screen{position:fixed;inset:0;z-index:9999;background:var(--blush);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;}
+.loading-screen img{width:100px;opacity:0.9;}
+.loading-bar{width:200px;height:3px;background:var(--blush3);border-radius:3px;overflow:hidden;}
+.loading-prog{height:100%;background:linear-gradient(90deg,var(--brand-dark),var(--brand-light));border-radius:3px;transition:width 0.5s ease;width:0%;}
+.loading-msg{font-size:12px;color:var(--text3);letter-spacing:1px;text-align:center;padding:0 20px;}
+
+/* LICENSE EXPIRED SCREEN */
+.expired-screen{position:fixed;inset:0;z-index:9998;background:var(--blush);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:40px;}
+.expired-screen img{width:80px;opacity:0.7;}
+.expired-title{font-family:"Cormorant Garamond",serif;font-size:28px;font-weight:700;color:var(--red);letter-spacing:2px;text-align:center;}
+.expired-sub{font-size:14px;color:var(--text2);text-align:center;line-height:1.6;}
+.expired-contact{background:var(--red-bg);border:1px solid rgba(196,75,53,0.2);border-radius:12px;padding:16px 24px;font-size:13px;color:var(--red);text-align:center;}
+
+/* HEADER */
+.header{padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(255,250,247,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--blush3);box-shadow:0 2px 16px rgba(184,149,90,0.08);flex-shrink:0;}
+.header-logo{display:flex;align-items:center;gap:10px;}
+.header-logo img{height:44px;width:auto;}
+.header-brand{font-family:"Cormorant Garamond",serif;line-height:1;}
+.header-brand-name{font-size:20px;font-weight:700;color:var(--brand-deep);letter-spacing:2px;}
+.header-brand-sub{font-size:10px;color:var(--text3);letter-spacing:3px;text-transform:uppercase;margin-top:2px;}
+.header-right{text-align:right;}
+.header-time{font-family:"JetBrains Mono",monospace;font-size:14px;font-weight:600;color:var(--brand-dark);}
+.header-date{font-size:10px;color:var(--text3);margin-top:2px;}
+
+/* PAGES */
+.page{display:none;flex:1;flex-direction:column;overflow:hidden;}
+.page.active{display:flex;}
+
+/* SYNC BAR */
+.sync-bar{display:flex;align-items:center;justify-content:space-between;padding:5px 16px;background:var(--surface2);border-bottom:1px solid var(--blush3);font-size:11px;flex-shrink:0;}
+.sync-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;}
+.sync-dot.online{background:var(--green);box-shadow:0 0 6px rgba(74,140,92,0.5);}
+.sync-dot.offline{background:var(--orange);}
+.sync-dot.syncing{background:var(--blue);animation:blink 1s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:0.3;}}
+
+/* PUNCH PAGE */
+.punch-scroll{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;align-items:center;}
+.camera-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;}
+.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:300px;object-fit:cover;}
+.cam-corners{position:absolute;inset:0;pointer-events:none;}
+.corner{position:absolute;width:28px;height:28px;}
+.corner::before,.corner::after{content:"";position:absolute;background:var(--brand);border-radius:2px;}
+.corner.tl{top:12px;left:12px;}.corner.tl::before{top:0;left:0;width:100%;height:3px;}.corner.tl::after{top:0;left:0;width:3px;height:100%;}
+.corner.tr{top:12px;right:12px;}.corner.tr::before{top:0;right:0;width:100%;height:3px;}.corner.tr::after{top:0;right:0;width:3px;height:100%;}
+.corner.bl{bottom:12px;left:12px;}.corner.bl::before{bottom:0;left:0;width:100%;height:3px;}.corner.bl::after{bottom:0;left:0;width:3px;height:100%;}
+.corner.br{bottom:12px;right:12px;}.corner.br::before{bottom:0;right:0;width:100%;height:3px;}.corner.br::after{bottom:0;right:0;width:3px;height:100%;}
+.face-guide{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:160px;height:190px;border:2px solid rgba(184,149,90,0.5);border-radius:50% 50% 45% 45%;pointer-events:none;transition:border-color 0.3s,box-shadow 0.3s;}
+.face-guide.detected{border-color:var(--green);box-shadow:0 0 24px rgba(74,140,92,0.3);}
+.face-guide.matched{border-color:var(--brand);box-shadow:0 0 32px rgba(184,149,90,0.5);animation:matchPulse 0.8s ease;}
+.face-guide.failed{border-color:var(--red);box-shadow:0 0 24px rgba(196,75,53,0.3);}
+@keyframes matchPulse{0%{box-shadow:0 0 10px rgba(184,149,90,0.3);}50%{box-shadow:0 0 50px rgba(184,149,90,0.7);}100%{box-shadow:0 0 10px rgba(184,149,90,0.3);}}
+.scan-beam{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--brand),transparent);animation:scanBeam 2s ease-in-out infinite;opacity:0.7;}
+@keyframes scanBeam{0%{top:20%;}50%{top:78%;}100%{top:20%;}}
+.cam-label{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(26,16,8,0.7));padding:20px 12px 10px;font-size:11px;color:rgba(255,255,255,0.8);text-align:center;letter-spacing:1.5px;text-transform:uppercase;}
+.status-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--blush3);border-radius:var(--radius);padding:20px;text-align:center;min-height:110px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;box-shadow:var(--shadow);transition:all 0.4s;}
+.status-card.success{background:var(--green-bg);border-color:rgba(74,140,92,0.3);}
+.status-card.warning{background:var(--orange-bg);border-color:rgba(196,122,32,0.3);}
+.status-card.error{background:var(--red-bg);border-color:rgba(196,75,53,0.3);}
+.status-icon{font-size:32px;}.status-name{font-family:"Cormorant Garamond",serif;font-size:26px;font-weight:700;color:var(--brand-deep);letter-spacing:1px;}
+.status-time{font-family:"JetBrains Mono",monospace;font-size:18px;font-weight:600;color:var(--text);}
+.status-detail{font-size:12px;color:var(--text2);}
+.punch-badge{padding:4px 14px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;}
+.badge-in{background:rgba(74,140,92,0.15);color:var(--green);border:1px solid rgba(74,140,92,0.25);}
+.badge-out{background:rgba(58,110,168,0.15);color:var(--blue);border:1px solid rgba(58,110,168,0.25);}
+.badge-late{background:rgba(196,122,32,0.15);color:var(--orange);border:1px solid rgba(196,122,32,0.25);}
+.badge-ot{background:rgba(184,149,90,0.15);color:var(--brand-dark);border:1px solid rgba(184,149,90,0.25);}
+.log-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--blush3);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);}
+.log-title{font-family:"Cormorant Garamond",serif;font-size:16px;font-weight:700;color:var(--brand-deep);margin-bottom:10px;}
+.log-scroll{max-height:160px;overflow-y:auto;}
+.log-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--blush2);}
+.log-item:last-child{border-bottom:none;}
+.log-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.log-dot.in{background:var(--green);}.log-dot.out{background:var(--blue);}.log-dot.fail{background:var(--red);}
+.log-name{flex:1;font-size:13px;font-weight:500;}
+.log-time{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--text2);}
+.log-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;}
+.lb-in{background:var(--green-bg);color:var(--green);}.lb-out{background:var(--blue-bg);color:var(--blue);}.lb-late{background:var(--orange-bg);color:var(--orange);}.lb-fail{background:var(--red-bg);color:var(--red);}
+.dev-tag{text-align:center;padding:5px;font-size:9px;color:var(--text3);letter-spacing:1px;flex-shrink:0;background:rgba(255,250,247,0.9);border-top:1px solid var(--blush2);}
+.bottom-nav{display:flex;background:rgba(255,250,247,0.97);border-top:1px solid var(--blush3);box-shadow:0 -2px 16px rgba(184,149,90,0.08);flex-shrink:0;}
+.nav-btn{flex:1;padding:12px 8px 10px;background:none;border:none;cursor:pointer;color:var(--text3);font-size:9px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;letter-spacing:0.5px;text-transform:uppercase;font-family:"DM Sans",sans-serif;transition:color 0.2s;}
+.nav-btn .ni{font-size:20px;}.nav-btn.active{color:var(--brand-dark);}
+
+/* ADMIN LOGIN */
+#adminLoginPage{align-items:center;justify-content:center;background:var(--blush);}
+.login-card{width:100%;max-width:360px;margin:20px;background:var(--surface);border:1px solid var(--blush3);border-radius:24px;padding:36px 28px;text-align:center;box-shadow:var(--shadow-lg);}
+.login-logo{height:60px;margin-bottom:16px;}
+.login-title{font-family:"Cormorant Garamond",serif;font-size:28px;font-weight:700;color:var(--brand-deep);letter-spacing:2px;}
+.login-sub{font-size:12px;color:var(--text3);margin-bottom:28px;margin-top:4px;}
+.pin-dots{display:flex;gap:14px;justify-content:center;margin-bottom:28px;}
+.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--blush3);transition:all 0.2s;}
+.pin-dot.filled{background:var(--brand);border-color:var(--brand);box-shadow:0 0 10px rgba(184,149,90,0.4);}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.pin-key{background:var(--blush);border:1px solid var(--blush3);border-radius:var(--radius-sm);padding:16px;font-size:20px;font-weight:600;cursor:pointer;color:var(--text);transition:all 0.15s;font-family:"JetBrains Mono",monospace;}
+.pin-key:active{transform:scale(0.94);background:rgba(184,149,90,0.1);}
+.pin-key.del{color:var(--text2);font-size:14px;}
+.pin-error{color:var(--red);font-size:12px;margin-top:14px;min-height:18px;}
+
+/* ADMIN */
+#adminPage{background:var(--blush);}
+.admin-tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--blush3);flex-shrink:0;overflow-x:auto;}
+.tab-btn{flex:1;min-width:60px;padding:11px 6px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:"DM Sans",sans-serif;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;transition:all 0.2s;}
+.tab-btn.active{color:var(--brand-dark);border-bottom-color:var(--brand);}
+.admin-scroll{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;}
+.card{background:var(--surface);border:1px solid var(--blush3);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);}
+.sec-title{font-family:"Cormorant Garamond",serif;font-size:17px;font-weight:700;color:var(--brand-deep);margin-bottom:14px;letter-spacing:0.5px;display:flex;align-items:center;gap:8px;}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.stat-card{background:var(--surface2);border:1px solid var(--blush3);border-radius:var(--radius-sm);padding:14px;text-align:center;}
+.stat-num{font-family:"Cormorant Garamond",serif;font-size:38px;font-weight:700;line-height:1;}
+.stat-lbl{font-size:10px;color:var(--text3);margin-top:3px;text-transform:uppercase;letter-spacing:0.5px;}
+.stat-num.g{color:var(--green)}.stat-num.r{color:var(--red)}.stat-num.o{color:var(--orange)}.stat-num.b{color:var(--blue)}
+.staff-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--blush2);}
+.staff-item:last-child{border-bottom:none;padding-bottom:0;}
+.staff-av{width:44px;height:44px;border-radius:50%;background:var(--blush2);border:2px solid var(--blush3);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;overflow:hidden;}
+.staff-av img{width:100%;height:100%;object-fit:cover;}
+.staff-info{flex:1;min-width:0;}
+.staff-name{font-weight:600;font-size:14px;color:var(--text);}
+.staff-role{font-size:11px;color:var(--text3);margin-top:1px;}
+.staff-timing{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--brand-dark);margin-top:2px;}
+.staff-actions{display:flex;gap:6px;}
+.btn-ic{width:32px;height:32px;border-radius:8px;border:1px solid var(--blush3);background:var(--blush);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--text2);transition:all 0.2s;}
+.btn-ic:hover{border-color:var(--brand-light);color:var(--brand-dark);}
+.btn-ic.danger:hover{border-color:rgba(196,75,53,0.3);color:var(--red);}
+.btn{padding:13px 20px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-family:"DM Sans",sans-serif;font-size:14px;font-weight:600;transition:all 0.2s;display:inline-flex;align-items:center;gap:8px;justify-content:center;}
+.btn-primary{background:linear-gradient(135deg,var(--brand-light),var(--brand-dark));color:#fff;width:100%;margin-top:8px;box-shadow:0 4px 16px rgba(184,149,90,0.3);}
+.btn-primary:active{transform:scale(0.98);}
+.btn-secondary{background:var(--blush);color:var(--text);border:1px solid var(--blush3);width:100%;margin-top:8px;}
+.btn-outline{background:transparent;color:var(--brand-dark);border:1px solid rgba(184,149,90,0.4);width:100%;margin-top:8px;}
+.btn-green{background:var(--green-bg);color:var(--green);border:1px solid rgba(74,140,92,0.25);width:100%;margin-top:8px;}
+.ig{margin-bottom:14px;}
+.il{font-size:11px;color:var(--text3);margin-bottom:5px;display:block;text-transform:uppercase;letter-spacing:0.5px;}
+.if{width:100%;padding:11px 14px;background:var(--blush);border:1px solid var(--blush3);border-radius:var(--radius-sm);color:var(--text);font-family:"DM Sans",sans-serif;font-size:14px;outline:none;transition:border-color 0.2s;}
+.if:focus{border-color:var(--brand-light);}
+.irow{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.tag{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:600;}
+.tag-ok{background:var(--green-bg);color:var(--green);}
+.tag-warn{background:var(--orange-bg);color:var(--orange);}
+.modal-ov{display:none;position:fixed;inset:0;z-index:1000;background:rgba(26,16,8,0.6);backdrop-filter:blur(6px);align-items:flex-end;justify-content:center;}
+.modal-ov.active{display:flex;}
+.modal{width:100%;max-width:480px;background:var(--surface);border:1px solid var(--blush3);border-radius:24px 24px 0 0;padding:28px 22px 36px;animation:slideUp 0.3s ease;max-height:90vh;overflow-y:auto;}
+@keyframes slideUp{from{transform:translateY(100%);opacity:0;}to{transform:translateY(0);opacity:1;}}
+.modal-title{font-family:"Cormorant Garamond",serif;font-size:22px;font-weight:700;color:var(--brand-deep);margin-bottom:20px;display:flex;align-items:center;gap:10px;}
+.modal-close{margin-left:auto;background:var(--blush);border:1px solid var(--blush3);color:var(--text2);cursor:pointer;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--blush3);color:var(--text);padding:11px 22px;border-radius:30px;font-size:13px;z-index:9999;white-space:nowrap;animation:tIn 0.3s ease;box-shadow:var(--shadow-lg);}
+@keyframes tIn{from{opacity:0;top:60px;}to{opacity:1;top:80px;}}
+.popup-ov{display:none;position:fixed;inset:0;z-index:2000;background:rgba(26,16,8,0.7);backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:20px;}
+.popup-ov.active{display:flex;}
+.popup-box{width:100%;max-width:380px;background:var(--surface);border-radius:24px;padding:32px 24px;text-align:center;box-shadow:var(--shadow-lg);animation:popIn 0.35s cubic-bezier(0.34,1.56,0.64,1);}
+@keyframes popIn{from{transform:scale(0.8);opacity:0;}to{transform:scale(1);opacity:1;}}
+.popup-icon{font-size:52px;margin-bottom:12px;}
+.popup-title{font-family:"Cormorant Garamond",serif;font-size:24px;font-weight:700;color:var(--brand-deep);margin-bottom:6px;}
+.popup-sub{font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.5;}
+.popup-time{font-family:"JetBrains Mono",monospace;font-size:20px;font-weight:600;color:var(--brand-dark);margin-bottom:12px;}
+.popup-badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:16px;}
+.popup-warning{background:var(--orange-bg);border:1px solid rgba(196,122,32,0.2);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--orange);text-align:left;}
+.popup-error{background:var(--red-bg);border:1px solid rgba(196,75,53,0.2);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--red);text-align:left;}
+.reason-label{font-size:12px;color:var(--text2);text-align:left;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}
+.reason-input{width:100%;padding:11px 14px;background:var(--blush);border:2px solid var(--orange);border-radius:var(--radius-sm);color:var(--text);font-family:"DM Sans",sans-serif;font-size:14px;outline:none;resize:none;min-height:70px;}
+.reason-req{font-size:11px;color:var(--red);margin-top:4px;text-align:left;}
+.highlight-card{background:var(--red-bg);border:1px solid rgba(196,75,53,0.2);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px;}
+.highlight-name{font-weight:700;font-size:14px;color:var(--red);margin-bottom:6px;}
+.highlight-tags{display:flex;gap:6px;flex-wrap:wrap;}
+.htag{padding:3px 10px;border-radius:20px;font-size:10px;font-weight:600;}
+.htag-abs{background:rgba(196,75,53,0.15);color:var(--red);}
+.htag-late{background:rgba(196,122,32,0.15);color:var(--orange);}
+.htag-early{background:rgba(58,110,168,0.15);color:var(--blue);}
+.appr-card{background:var(--blush2);border-radius:var(--radius-sm);padding:14px;margin-bottom:12px;border:1px solid rgba(196,75,53,0.15);}
+.appr-photo{width:100%;border-radius:10px;margin-bottom:10px;transform:scaleX(-1);}
+.appr-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.btn-approve{background:var(--green-bg);color:var(--green);border:1px solid rgba(74,140,92,0.25);border-radius:10px;padding:11px;cursor:pointer;font-weight:600;font-family:"DM Sans",sans-serif;font-size:13px;}
+.btn-reject{background:var(--red-bg);color:var(--red);border:1px solid rgba(196,75,53,0.25);border-radius:10px;padding:11px;cursor:pointer;font-weight:600;font-family:"DM Sans",sans-serif;font-size:13px;}
+.badge-count{background:var(--red);color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-left:3px;vertical-align:middle;}
+.empty-state{text-align:center;padding:32px 16px;color:var(--text3);}
+.empty-icon{font-size:40px;margin-bottom:10px;}
+canvas{display:none;}
+.hidden{display:none!important;}
+select.if{appearance:none;}
+.reg-cam-wrap{width:100%;border-radius:14px;overflow:hidden;background:var(--blush2);position:relative;margin-bottom:12px;}
+.reg-cam-wrap video{width:100%;display:block;transform:scaleX(-1);}
+.reg-guide-ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+.reg-guide{width:130px;height:165px;border:2px dashed rgba(184,149,90,0.5);border-radius:50% 50% 45% 45%;}
+.photo-thumbs{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;}
+.photo-thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:2px solid var(--brand-light);}
+.set-row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--blush2);}
+.set-row:last-child{border-bottom:none;}
+.set-lbl{font-size:13px;color:var(--text);}
+.set-sub{font-size:11px;color:var(--text3);margin-top:1px;}
+.set-val{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--brand-dark);background:var(--blush);border:1px solid var(--blush3);border-radius:8px;padding:5px 11px;cursor:pointer;min-width:65px;text-align:center;}
+.sync-setup{background:linear-gradient(135deg,rgba(184,149,90,0.08),rgba(184,149,90,0.03));border:1px solid rgba(184,149,90,0.2);border-radius:var(--radius);padding:18px;}
+.script-box{background:var(--dark);color:#E8C96A;border-radius:10px;padding:12px;font-family:"JetBrains Mono",monospace;font-size:10px;line-height:1.6;overflow-x:auto;margin:8px 0;white-space:pre;max-height:200px;overflow-y:auto;}
+.url-input-wrap{display:flex;gap:8px;margin-top:8px;}
+.url-input-wrap .if{font-size:12px;font-family:"JetBrains Mono",monospace;}
+.url-input-wrap button{padding:0 16px;background:var(--brand);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-weight:600;white-space:nowrap;font-size:13px;}
+.install-banner{background:linear-gradient(135deg,var(--brand-deep),var(--brand-dark));color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;flex-shrink:0;}
+.install-banner .ib-icon{font-size:24px;}
+.install-banner .ib-text{flex:1;font-size:13px;font-weight:600;}
+.install-banner .ib-sub{font-size:11px;opacity:0.8;margin-top:2px;}
+.install-banner button{background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;}
+</style>
+</head>
+<body>
+
+<div class="watermark"><img id="wmImg" alt=""></div>
+<div class="bg-pattern"></div>
+
+<!-- LOADING -->
+<div class="loading-screen" id="loadingScreen">
+  <img id="loadingLogo" alt="Varnica Jewels" style="width:100px">
+  <div style="font-family:'Cormorant Garamond',serif;font-size:22px;color:var(--brand-deep);letter-spacing:3px">VARNICA JEWELS</div>
+  <div style="font-size:11px;color:var(--text3);letter-spacing:2px">Staff Attendance System</div>
+  <div class="loading-bar"><div class="loading-prog" id="loadingBar"></div></div>
+  <div class="loading-msg" id="loadingMsg">Checking license...</div>
+</div>
+
+<!-- EXPIRED SCREEN -->
+<div class="expired-screen" id="expiredScreen">
+  <img id="expiredLogo" alt="Varnica">
+  <div class="expired-title">⛔ Access Expired</div>
+  <div class="expired-sub">Your subscription for this tool has expired.<br>Please contact your tool provider to renew.</div>
+  <div class="expired-contact">
+    📞 Contact: Vimal Gehlot<br>
+    🛠️ Developer of this tool
+  </div>
+</div>
+
+<canvas id="mainCanvas"></canvas>
+<canvas id="regCanvas"></canvas>
+
+<div class="app">
+
+<!-- PUNCH PAGE -->
+<div class="page active" id="punchPage">
+  <div class="header">
+    <div class="header-logo">
+      <img id="hLogo" alt="Varnica" style="height:44px;">
+      <div class="header-brand">
+        <div class="header-brand-name">VARNICA</div>
+        <div class="header-brand-sub">Jewels • Attendance</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="header-time" id="headerTime">--:--:--</div>
+      <div class="header-date" id="headerDate"></div>
+    </div>
+  </div>
+  <div class="sync-bar">
+    <div><span class="sync-dot" id="syncDot"></span><span id="syncStatus" style="color:var(--text2)">Checking...</span></div>
+    <span id="pendingBadge" style="font-size:10px;color:var(--orange);display:none"></span>
+  </div>
+  <!-- PWA Install Banner -->
+  <div class="install-banner hidden" id="installBanner">
+    <div class="ib-icon">📱</div>
+    <div><div class="ib-text">Install App on your phone</div><div class="ib-sub">Works offline after installation</div></div>
+    <button onclick="installPWA()">Install</button>
+    <button onclick="document.getElementById('installBanner').classList.add('hidden')" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:18px;padding:0 4px">✕</button>
+  </div>
+  <div class="punch-scroll">
+    <div class="camera-card">
+      <video id="mainVideo" autoplay muted playsinline></video>
+      <div class="cam-corners">
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+        <div class="face-guide" id="faceGuide"></div>
+        <div class="scan-beam"></div>
+      </div>
+      <div class="cam-label" id="camLabel">Position your face in the frame</div>
+    </div>
+    <div class="status-card" id="statusCard">
+      <div class="status-icon">👤</div>
+      <div style="font-size:14px;color:var(--text2)">Waiting for face scan...</div>
+      <div style="font-size:11px;color:var(--text3)">Look directly at the camera</div>
+    </div>
+    <div class="log-card">
+      <div class="log-title">📋 Today's Attendance</div>
+      <div class="log-scroll" id="todayLogMini"></div>
+    </div>
+  </div>
+  <div class="dev-tag">Developer — Vimal Gehlot</div>
+  <div class="bottom-nav">
+    <button class="nav-btn active" onclick="showPage('punchPage')"><span class="ni">📷</span>Scan</button>
+    <button class="nav-btn" onclick="goAdmin()"><span class="ni">👑</span>Admin</button>
+  </div>
+</div>
+
+<!-- ADMIN LOGIN -->
+<div class="page" id="adminLoginPage">
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--blush)">
+    <div class="login-card">
+      <img id="loginLogo" class="login-logo" alt="Varnica">
+      <div class="login-title">ADMIN ACCESS</div>
+      <div class="login-sub">Enter your secure PIN to continue</div>
+      <div class="pin-dots">
+        <div class="pin-dot" id="d0"></div><div class="pin-dot" id="d1"></div>
+        <div class="pin-dot" id="d2"></div><div class="pin-dot" id="d3"></div>
+      </div>
+      <div class="pin-pad">
+        <button class="pin-key" onclick="pk('1')">1</button><button class="pin-key" onclick="pk('2')">2</button><button class="pin-key" onclick="pk('3')">3</button>
+        <button class="pin-key" onclick="pk('4')">4</button><button class="pin-key" onclick="pk('5')">5</button><button class="pin-key" onclick="pk('6')">6</button>
+        <button class="pin-key" onclick="pk('7')">7</button><button class="pin-key" onclick="pk('8')">8</button><button class="pin-key" onclick="pk('9')">9</button>
+        <button class="pin-key" onclick="pk('*')" style="color:var(--text3)">✦</button>
+        <button class="pin-key" onclick="pk('0')">0</button>
+        <button class="pin-key del" onclick="pd()">⌫</button>
+      </div>
+      <div class="pin-error" id="pinError"></div>
+      <button class="btn btn-secondary" style="margin-top:20px" onclick="showPage('punchPage')">← Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div class="page" id="adminPage">
+  <div class="header">
+    <div class="header-logo"><img id="adminLogo" alt="V" style="height:36px;"><div class="header-brand"><div class="header-brand-name" style="font-size:17px">Admin Panel</div></div></div>
+    <button class="btn-ic danger" onclick="adminLogout()" style="color:var(--red)">🚪</button>
+  </div>
+  <div class="admin-tabs">
+    <button class="tab-btn active" onclick="aTab('dash')">📊 Dash</button>
+    <button class="tab-btn" onclick="aTab('staff')">👥 Staff</button>
+    <button class="tab-btn" onclick="aTab('report')">📈 Report</button>
+    <button class="tab-btn" onclick="aTab('appr')">📸 Approvals<span class="badge-count" id="apprBadge" style="display:none">0</span></button>
+    <button class="tab-btn" onclick="aTab('sync')">☁️ Sync</button>
+    <button class="tab-btn" onclick="aTab('settings')">⚙️ Settings</button>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="admin-scroll" id="tabDash">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-num g" id="sPresent">0</div><div class="stat-lbl">Present Today</div></div>
+      <div class="stat-card"><div class="stat-num r" id="sAbsent">0</div><div class="stat-lbl">Absent</div></div>
+      <div class="stat-card"><div class="stat-num o" id="sLate">0</div><div class="stat-lbl">Late Today</div></div>
+      <div class="stat-card"><div class="stat-num b" id="sTotal">0</div><div class="stat-lbl">Total Staff</div></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="sec-title" style="margin-bottom:0">📋 Today's Log</div>
+        <div style="font-size:10px;color:var(--text3)" id="lastSyncTime"></div>
+      </div>
+      <div id="dashLog"></div>
+    </div>
+  </div>
+
+  <!-- STAFF -->
+  <div class="admin-scroll hidden" id="tabStaff">
+    <button class="btn btn-primary" onclick="openAddStaff()">+ Add New Staff Member</button>
+    <div class="card"><div class="sec-title">👥 Staff List (<span id="staffCount">0</span>)</div><div id="staffList"></div></div>
+  </div>
+
+  <!-- REPORT -->
+  <div class="admin-scroll hidden" id="tabReport">
+    <div class="card" style="padding:14px">
+      <div class="irow" style="margin-bottom:10px">
+        <div><label class="il">From Date</label><input type="date" class="if" id="rptFrom"></div>
+        <div><label class="il">To Date</label><input type="date" class="if" id="rptTo"></div>
+      </div>
+      <div class="ig"><label class="il">Staff Filter</label><select class="if" id="rptStaff"><option value="">All Staff</option></select></div>
+      <button class="btn btn-primary" onclick="generateReport()">📊 Generate Report</button>
+      <button class="btn btn-outline" onclick="exportReportCSV()" style="margin-top:6px">⬇️ Export CSV</button>
+      <button class="btn btn-green" onclick="exportToGSheets()" style="margin-top:6px">📤 Send to Google Sheets</button>
+    </div>
+    <div id="reportHighlights"></div>
+    <div class="card" style="padding:14px;overflow-x:auto;"><div class="sec-title">Results</div><div id="reportTable"><div class="empty-state"><p>Generate report to see results</p></div></div></div>
+  </div>
+
+  <!-- APPROVALS -->
+  <div class="admin-scroll hidden" id="tabAppr">
+    <div style="background:var(--red-bg);border:1px solid rgba(196,75,53,0.15);border-radius:12px;padding:12px;font-size:12px;color:var(--text2)">⚠️ Unknown face scans. Review photo, assign staff, then approve or reject.</div>
+    <div id="apprList"></div>
+  </div>
+
+  <!-- SYNC -->
+  <div class="admin-scroll hidden" id="tabSync">
+    <div class="card">
+      <div class="sec-title">☁️ Google Sheets Sync</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--blush2);border-radius:12px;margin-bottom:14px">
+        <span class="sync-dot" id="syncDot2" style="width:12px;height:12px"></span>
+        <div style="flex:1"><div style="font-weight:600;font-size:13px" id="syncStatusText">Not Configured</div><div style="font-size:11px;color:var(--text3)" id="syncSubText">Setup below</div></div>
+        <button class="btn-ic" onclick="manualSync()" title="Sync Now">🔄</button>
+      </div>
+      <div class="ig">
+        <label class="il">Attendance Sheet Script URL</label>
+        <div class="url-input-wrap">
+          <input type="url" class="if" id="sheetUrl" placeholder="https://script.google.com/macros/s/...">
+          <button onclick="saveSheetUrl()">Save</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1;background:var(--blush2);border-radius:10px;padding:12px;text-align:center">
+          <div style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;color:var(--brand)" id="pendingCount">0</div>
+          <div style="font-size:10px;color:var(--text3)">Pending</div>
+        </div>
+        <div style="flex:1;background:var(--blush2);border-radius:10px;padding:12px;text-align:center">
+          <div style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;color:var(--green)" id="syncedCount">0</div>
+          <div style="font-size:10px;color:var(--text3)">Synced</div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="manualSync()">🔄 Sync Now</button>
+    </div>
+    <div class="card">
+      <div class="sec-title">📋 Sync Log</div>
+      <div id="syncLog" style="max-height:180px;overflow-y:auto;font-size:12px;color:var(--text2)"><div class="empty-state" style="padding:16px"><p>No activity yet</p></div></div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="admin-scroll hidden" id="tabSettings">
+    <div class="card">
+      <div class="sec-title">⏰ Timing Rules</div>
+      <div class="set-row"><div><div class="set-lbl">Late Grace Period</div><div class="set-sub">Minutes after shift start = Present</div></div><div class="set-val" onclick="editSetting('grace')" id="graceVal">10 min</div></div>
+      <div class="set-row"><div><div class="set-lbl">Half Day Threshold</div><div class="set-sub">Min hours = Half Day</div></div><div class="set-val" onclick="editSetting('halfDay')" id="halfDayVal">4 hrs</div></div>
+      <div class="set-row"><div><div class="set-lbl">Early Out Threshold</div><div class="set-sub">Min before shift end = Early Out</div></div><div class="set-val" onclick="editSetting('earlyOut')" id="earlyOutVal">15 min</div></div>
+    </div>
+    <div class="card">
+      <div class="sec-title">📅 Week Off & Holidays</div>
+      <div class="set-row"><div><div class="set-lbl">Default Week Off</div></div>
+        <select class="if" id="weekOffSel" style="width:auto;padding:6px 10px" onchange="saveSetting()">
+          <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
+          <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option>
+        </select>
+      </div>
+      <div style="margin-top:14px">
+        <div class="sec-title" style="font-size:14px;margin-bottom:8px">Custom Holidays</div>
+        <div class="irow"><input type="date" class="if" id="holDate"><input type="text" class="if" id="holName" placeholder="e.g. Diwali"></div>
+        <button class="btn btn-outline" onclick="addHoliday()">+ Add Holiday</button>
+        <div id="holList" style="margin-top:10px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="sec-title">🔐 Change Admin PIN</div>
+      <div class="ig"><label class="il">New PIN (4 digits)</label><input type="password" class="if" id="newPin" maxlength="4" placeholder="New PIN"></div>
+      <div class="ig"><label class="il">Confirm PIN</label><input type="password" class="if" id="confPin" maxlength="4" placeholder="Confirm"></div>
+      <button class="btn btn-primary" onclick="changePin()">Update PIN</button>
+    </div>
+    <div class="card">
+      <div class="sec-title">📤 Export</div>
+      <button class="btn btn-outline" onclick="exportAllCSV()">📊 Export Attendance CSV</button>
+      <button class="btn btn-secondary" onclick="exportStaffCSV()" style="margin-top:8px">👥 Export Staff CSV</button>
+    </div>
+  </div>
+  <div class="dev-tag">Developer — Vimal Gehlot</div>
+</div>
+</div><!-- /app -->
+
+<!-- MODALS -->
+<div class="modal-ov" id="staffModal">
+  <div class="modal">
+    <div class="modal-title"><span id="staffModalTitle">➕ Add Staff</span><button class="modal-close" onclick="closeModal('staffModal')">✕</button></div>
+    <input type="hidden" id="editStaffId">
+    <div class="ig"><label class="il">Full Name *</label><input type="text" class="if" id="sName" placeholder="e.g. Ramesh Kumar"></div>
+    <div class="ig"><label class="il">Role</label><input type="text" class="if" id="sRole" placeholder="e.g. Sales Executive"></div>
+    <div class="irow">
+      <div class="ig"><label class="il">Shift Start *</label><input type="time" class="if" id="sIn" value="09:00"></div>
+      <div class="ig"><label class="il">Shift End *</label><input type="time" class="if" id="sOut" value="18:00"></div>
+    </div>
+    <label class="il">Face Registration (3-5 photos)</label>
+    <div class="reg-cam-wrap"><video id="regVideo" autoplay muted playsinline></video><div class="reg-guide-ov"><div class="reg-guide"></div></div></div>
+    <div class="photo-thumbs" id="photoThumbs"></div>
+    <div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px" id="capInfo"></div>
+    <button class="btn btn-outline" onclick="capturePhoto()">📸 Capture (<span id="capNum">0</span>/5)</button>
+    <button class="btn btn-primary" onclick="saveStaff()">💾 Save Staff</button>
+    <button class="btn btn-secondary" onclick="closeModal('staffModal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-ov" id="timingModal">
+  <div class="modal">
+    <div class="modal-title">⏰ Edit Timing<button class="modal-close" onclick="closeModal('timingModal')">✕</button></div>
+    <input type="hidden" id="timingId">
+    <div style="font-size:14px;color:var(--text2);margin-bottom:16px" id="timingName"></div>
+    <div class="irow">
+      <div class="ig"><label class="il">Start</label><input type="time" class="if" id="tIn"></div>
+      <div class="ig"><label class="il">End</label><input type="time" class="if" id="tOut"></div>
+    </div>
+    <button class="btn btn-primary" onclick="saveTiming()">Save</button>
+    <button class="btn btn-secondary" onclick="closeModal('timingModal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-ov" id="settingModal">
+  <div class="modal" style="border-radius:24px;margin:auto 20px">
+    <div class="modal-title">✏️ Edit<button class="modal-close" onclick="closeModal('settingModal')">✕</button></div>
+    <div class="ig"><label class="il" id="settingLbl">Value</label><input type="number" class="if" id="settingInput" min="1" max="240"></div>
+    <button class="btn btn-primary" onclick="saveSettingVal()">Save</button>
+  </div>
+</div>
+
+<!-- POPUPS -->
+<div class="popup-ov" id="welcomePopup">
+  <div class="popup-box">
+    <div class="popup-icon" id="wIcon">🙏</div>
+    <div class="popup-title" id="wName">Welcome!</div>
+    <div class="popup-time" id="wTime"></div>
+    <div class="popup-badges" id="wBadges"></div>
+    <div class="popup-sub" id="wSub"></div>
+    <div id="syncIndicator" style="font-size:11px;margin-top:6px"></div>
+    <button class="btn btn-primary" onclick="closePopup('welcomePopup')" style="margin-top:10px">OK ✓</button>
+  </div>
+</div>
+
+<div class="popup-ov" id="warningPopup">
+  <div class="popup-box">
+    <div class="popup-icon" id="wpIcon">⚠️</div>
+    <div class="popup-title" id="wpTitle"></div>
+    <div class="popup-time" id="wpTime"></div>
+    <div class="popup-warning" id="wpMsg"></div>
+    <div class="reason-label">Reason *</div>
+    <textarea class="reason-input" id="wpReason" placeholder="Type reason here..."></textarea>
+    <div class="reason-req" id="wpReqMsg" style="display:none">⚠️ Reason is compulsory.</div>
+    <button class="btn btn-primary" style="margin-top:12px" onclick="submitWarning()">Submit & Record</button>
+  </div>
+</div>
+
+<div class="popup-ov" id="errorPopup">
+  <div class="popup-box">
+    <div class="popup-icon">📸</div>
+    <div class="popup-title" style="color:var(--red)">Not Recognized</div>
+    <div class="popup-error">Face could not be matched. Photo captured for Admin review.</div>
+    <div class="popup-sub">Please inform your manager.</div>
+    <button class="btn btn-secondary" style="margin-top:10px" onclick="closePopup('errorPopup')">OK</button>
+  </div>
+</div>
+
+<div class="popup-ov" id="absentPopup">
+  <div class="popup-box">
+    <div class="popup-icon">📅</div>
+    <div class="popup-title">Yesterday's Absence</div>
+    <div class="popup-sub" id="absentMsg"></div>
+    <div class="popup-warning">Reason is compulsory for attendance records.</div>
+    <div class="reason-label">Reason *</div>
+    <textarea class="reason-input" id="absentReason" placeholder="Enter reason..."></textarea>
+    <div class="reason-req" id="absentReqMsg" style="display:none">⚠️ Please enter a reason.</div>
+    <button class="btn btn-primary" style="margin-top:12px" onclick="submitAbsentReason()">Submit & Continue</button>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// CONFIG — MASTER LICENSE CHECK
+// ══════════════════════════════════════════════
+const LICENSE_URL = 'MASTER_SCRIPT_URL_HERE'; // Vimalji will replace this
+const TOOL_ID = 'varnica-attendance-v1';
+
+// ══════════════════════════════════════════════
+// IMAGES (embedded)
+// ══════════════════════════════════════════════
+const LOGO_B64 =  + logo_b64 + ;
+const JEWEL_B64 =  + jewel_b64 + ;
+
+function embedImages(){
+  const ls='data:image/png;base64,'+LOGO_B64;
+  const js='data:image/jpeg;base64,'+JEWEL_B64;
+  ['hLogo','loginLogo','adminLogo','loadingLogo','expiredLogo'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.src=ls;
+  });
+  const wm=document.getElementById('wmImg');if(wm)wm.src=js;
+}
+
+// ══════════════════════════════════════════════
+// DATA LAYER
+// ══════════════════════════════════════════════
+const DB={
+  get:k=>{try{return JSON.parse(localStorage.getItem('vj_'+k));}catch{return null;}},
+  set:(k,v)=>localStorage.setItem('vj_'+k,JSON.stringify(v))
+};
+const getStaff=()=>DB.get('staff')||[];
+const setStaff=v=>DB.set('staff',v);
+const getAtt=()=>DB.get('att')||[];
+const setAtt=v=>DB.set('att',v);
+const getSettings=()=>DB.get('settings')||{grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234'};
+const setSettings=v=>DB.set('settings',v);
+const getPending=()=>DB.get('pending')||[];
+const setPending=v=>DB.set('pending',v);
+const getQueue=()=>DB.get('syncQueue')||[];
+const setQueue=v=>DB.set('syncQueue',v);
+const getSyncMeta=()=>DB.get('syncMeta')||{url:'',syncedCount:0,lastSync:''};
+const setSyncMeta=v=>DB.set('syncMeta',v);
+
+// ══════════════════════════════════════════════
+// GLOBALS
+// ══════════════════════════════════════════════
+let faceLoaded=false,faceMatcher=null,mainStream=null,regStream=null;
+let regPhotos=[],cooldown=false,curPin='',editingKey='';
+let pendingPunchData=null,pendingAbsentId=null,syncInProgress=false;
+let deferredInstallPrompt=null;
+let lastReportData=[];
+
+// ══════════════════════════════════════════════
+// PWA
+// ══════════════════════════════════════════════
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').then(()=>console.log('SW registered')).catch(e=>console.log('SW error:',e));
+}
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();deferredInstallPrompt=e;
+  document.getElementById('installBanner').classList.remove('hidden');
+});
+function installPWA(){
+  if(!deferredInstallPrompt)return;
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.then(()=>{deferredInstallPrompt=null;document.getElementById('installBanner').classList.add('hidden');});
+}
+
+// ══════════════════════════════════════════════
+// LICENSE CHECK
+// ══════════════════════════════════════════════
+async function checkLicense(){
+  // If no license URL configured, skip check (development mode)
+  if(!LICENSE_URL||LICENSE_URL==='MASTER_SCRIPT_URL_HERE'){
+    console.log('License URL not configured — running in dev mode');
+    return true;
+  }
+  try{
+    const res=await fetch(LICENSE_URL+'?tool='+TOOL_ID+'&t='+Date.now(),{method:'GET'});
+    const data=await res.json();
+    if(data.status==='ACTIVE'){
+      // Cache license for offline use (24 hours)
+      DB.set('licenseCache',{status:'ACTIVE',expiry:data.expiry,checked:Date.now()});
+      return true;
+    } else {
+      showExpired(data.message||'License expired');
+      return false;
+    }
+  }catch(e){
+    // Offline — use cached license
+    const cached=DB.get('licenseCache');
+    if(cached&&cached.status==='ACTIVE'){
+      const hoursSince=(Date.now()-cached.checked)/3600000;
+      if(hoursSince<24) return true; // valid for 24hrs offline
+    }
+    // Cannot verify — allow but warn
+    console.log('License check failed (offline?) — allowing with warning');
+    return true;
+  }
+}
+
+function showExpired(msg){
+  document.getElementById('loadingScreen').style.display='none';
+  const es=document.getElementById('expiredScreen');
+  es.style.display='flex';
+}
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+async function init(){
+  embedImages();
+  updateClock();setInterval(updateClock,1000);
+  
+  document.getElementById('loadingMsg').textContent='Checking license...';
+  document.getElementById('loadingBar').style.width='15%';
+  
+  const licensed=await checkLicense();
+  if(!licensed) return;
+  
+  document.getElementById('loadingMsg').textContent='Loading AI models...';
+  document.getElementById('loadingBar').style.width='30%';
+  
+  await loadFaceApi();
+  checkConnection();setInterval(checkConnection,10000);
+  await startMainCam();
+  renderTodayLog();setDefaultDates();loadSheetUrl();updateSyncUI();
+}
+
+// ══════════════════════════════════════════════
+// FACE API
+// ══════════════════════════════════════════════
+async function loadFaceApi(){
+  const bar=document.getElementById('loadingBar');
+  const msg=document.getElementById('loadingMsg');
+  try{
+    const MODEL='https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights';
+    msg.textContent='Loading face detector...';bar.style.width='45%';
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL);
+    msg.textContent='Loading face landmark model...';bar.style.width='70%';
+    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL);
+    msg.textContent='Loading recognition model...';bar.style.width='90%';
+    await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL);
+    bar.style.width='100%';msg.textContent='Ready!';
+    faceLoaded=true;
+    await buildMatcher();
+    setTimeout(()=>document.getElementById('loadingScreen').style.display='none',600);
+  }catch(e){
+    msg.textContent='Model load failed. Check internet & retry.';
+    document.getElementById('loadingBar').style.background='var(--red)';
+    console.error('FaceAPI error:',e);
+  }
+}
+
+async function buildMatcher(){
+  const staff=getStaff().filter(s=>s.descriptors&&s.descriptors.length);
+  if(!staff.length){faceMatcher=null;return;}
+  const labeled=staff.map(s=>new faceapi.LabeledFaceDescriptors(s.id,s.descriptors.map(d=>new Float32Array(d))));
+  faceMatcher=new faceapi.FaceMatcher(labeled,0.5);
+}
+
+// ══════════════════════════════════════════════
+// CLOCK
+// ══════════════════════════════════════════════
+function updateClock(){
+  const n=new Date();
+  document.getElementById('headerTime').textContent=n.toLocaleTimeString('en-IN',{hour12:false});
+  document.getElementById('headerDate').textContent=n.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+}
+
+// ══════════════════════════════════════════════
+// CONNECTION
+// ══════════════════════════════════════════════
+function checkConnection(){
+  const online=navigator.onLine;
+  const dot=document.getElementById('syncDot');
+  const status=document.getElementById('syncStatus');
+  if(online){
+    dot.className='sync-dot online';
+    status.textContent='Online';status.style.color='var(--green)';
+    const q=getQueue();if(q.length&&!syncInProgress)autoSync();
+  }else{
+    dot.className='sync-dot offline';
+    status.textContent='Offline — saved locally';status.style.color='var(--orange)';
+  }
+  const q=getQueue();
+  const pb=document.getElementById('pendingBadge');
+  if(q.length){pb.style.display='inline';pb.textContent=q.length+' pending sync';}
+  else pb.style.display='none';
+  updateSyncUI();
+}
+
+// ══════════════════════════════════════════════
+// GOOGLE SHEETS SYNC
+// ══════════════════════════════════════════════
+function saveSheetUrl(){
+  const url=document.getElementById('sheetUrl').value.trim();
+  if(!url){showToast('Enter valid URL');return;}
+  const m=getSyncMeta();m.url=url;setSyncMeta(m);
+  showToast('✅ Saved!');updateSyncUI();
+}
+function loadSheetUrl(){
+  const m=getSyncMeta();
+  if(m.url)document.getElementById('sheetUrl').value=m.url;
+}
+function updateSyncUI(){
+  const m=getSyncMeta(),q=getQueue();
+  const pc=document.getElementById('pendingCount');const sc=document.getElementById('syncedCount');
+  if(pc)pc.textContent=q.length;if(sc)sc.textContent=m.syncedCount||0;
+  const st=document.getElementById('syncStatusText');const sub=document.getElementById('syncSubText');
+  const dot2=document.getElementById('syncDot2');
+  if(!m.url){if(st){st.textContent='Not Configured';st.style.color='var(--orange)';}if(dot2)dot2.className='sync-dot offline';}
+  else if(navigator.onLine){if(st){st.textContent='Connected';st.style.color='var(--green)';}if(dot2)dot2.className='sync-dot online';}
+  else{if(st){st.textContent='Offline';st.style.color='var(--orange)';}if(dot2)dot2.className='sync-dot offline';}
+  if(m.lastSync&&sub)sub.textContent='Last: '+m.lastSync;
+  const ls=document.getElementById('lastSyncTime');
+  if(ls&&m.lastSync)ls.textContent='Synced: '+m.lastSync;
+}
+function addToQueue(rec){
+  const q=getQueue();q.push({...rec,queuedAt:new Date().toISOString()});setQueue(q);
+  if(navigator.onLine)autoSync();else checkConnection();
+}
+async function autoSync(){
+  const m=getSyncMeta();if(!m.url||syncInProgress)return;
+  const q=getQueue();if(!q.length)return;
+  syncInProgress=true;
+  const dot=document.getElementById('syncDot');if(dot)dot.className='sync-dot syncing';
+  let success=0;const remaining=[];
+  for(const item of q){
+    try{
+      const res=await fetch(m.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(item)});
+      const data=await res.json();
+      if(data.success)success++;else remaining.push(item);
+    }catch(e){remaining.push(item);}
+  }
+  setQueue(remaining);
+  if(success>0){
+    m.syncedCount=(m.syncedCount||0)+success;
+    m.lastSync=new Date().toLocaleTimeString('en-IN',{hour12:false});
+    setSyncMeta(m);
+    addSyncLog('✅ Synced '+success+' record(s)');
+  }
+  if(remaining.length)addSyncLog('⚠️ '+remaining.length+' pending');
+  syncInProgress=false;checkConnection();updateSyncUI();
+}
+async function manualSync(){
+  const m=getSyncMeta();
+  if(!m.url){showToast('Set Google Sheets URL first');return;}
+  showToast('Syncing...');
+  const att=getAtt(),q=getQueue();
+  att.forEach(a=>{if(!q.find(x=>x.staffName===a.staffName&&x.date===a.date)){q.push({action:'punch',...a,queuedAt:new Date().toISOString()});}});
+  setQueue(q);await autoSync();
+  try{
+    const staff=getStaff();
+    await fetch(m.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'staff_sync',staff:staff.map(s=>({name:s.name,role:s.role,shiftIn:s.shiftIn,shiftOut:s.shiftOut,hasFace:!!(s.descriptors&&s.descriptors.length)}))})});
+  }catch(e){}
+  showToast('✅ Sync done!');updateSyncUI();
+}
+async function exportToGSheets(){
+  if(!lastReportData.length){showToast('Generate report first');return;}
+  const m=getSyncMeta();if(!m.url){showToast('Set Sheet URL in Sync tab');aTab('sync');return;}
+  let sent=0;
+  for(const s of lastReportData){
+    for(const r of s.rows){
+      try{await fetch(m.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'punch',date:r.date,staffName:s.staff.name,inTime:r.inTime,outTime:r.outTime,status:r.status,hours:r.hours,method:'report',reason:r.reason,absentReason:''})});sent++;}catch(e){}
+    }
+  }
+  addSyncLog('📊 '+sent+' rows sent');showToast('✅ Sent '+sent+' rows!');
+}
+function addSyncLog(msg){
+  const el=document.getElementById('syncLog');if(!el)return;
+  const t=new Date().toLocaleTimeString('en-IN',{hour12:false});
+  const d=document.createElement('div');
+  d.style.cssText='padding:5px 0;border-bottom:1px solid var(--blush2);';
+  d.innerHTML='<span style="font-family:monospace;color:var(--text3);margin-right:6px">'+t+'</span>'+msg;
+  if(el.querySelector('.empty-state'))el.innerHTML='';
+  el.insertBefore(d,el.firstChild);
+}
+
+// ══════════════════════════════════════════════
+// CAMERA
+// ══════════════════════════════════════════════
+async function startMainCam(){
+  try{
+    mainStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
+    const v=document.getElementById('mainVideo');v.srcObject=mainStream;await v.play();
+    startScanLoop();
+  }catch(e){document.getElementById('camLabel').textContent='Camera access denied. Please allow camera.';}
+}
+function stopMainCam(){if(mainStream){mainStream.getTracks().forEach(t=>t.stop());mainStream=null;}}
+async function startRegCam(){
+  try{regStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});document.getElementById('regVideo').srcObject=regStream;await document.getElementById('regVideo').play();}catch(e){showToast('Camera error');}
+}
+function stopRegCam(){if(regStream){regStream.getTracks().forEach(t=>t.stop());regStream=null;}}
+
+// ══════════════════════════════════════════════
+// SCAN LOOP
+// ══════════════════════════════════════════════
+async function startScanLoop(){
+  if(!faceLoaded)return;
+  const video=document.getElementById('mainVideo'),guide=document.getElementById('faceGuide'),label=document.getElementById('camLabel');
+  const loop=async()=>{
+    if(video.readyState===4&&!cooldown){
+      try{
+        const det=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.5})).withFaceLandmarks().withFaceDescriptor();
+        if(det){
+          guide.className='face-guide detected';label.textContent='Face detected — matching...';
+          if(faceMatcher){
+            const match=faceMatcher.findBestMatch(det.descriptor);
+            if(match.label!=='unknown'){
+              const staff=getStaff().find(s=>s.id===match.label);
+              if(staff){guide.className='face-guide matched';cooldown=true;await handlePunch(staff);setTimeout(()=>{cooldown=false;guide.className='face-guide';label.textContent='Position your face in the frame';resetStatusCard();},5000);}
+            }else{
+              guide.className='face-guide failed';label.textContent='Not recognized — capturing...';
+              await captureFail();cooldown=true;setTimeout(()=>{cooldown=false;guide.className='face-guide';label.textContent='Position your face in the frame';resetStatusCard();},4000);
+            }
+          }else{label.textContent='No staff registered yet';}
+        }else{guide.className='face-guide';label.textContent='Position your face in the frame';}
+      }catch(e){}
+    }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+}
+
+// ══════════════════════════════════════════════
+// PUNCH
+// ══════════════════════════════════════════════
+async function handlePunch(staff){
+  const yesterday=toKey(new Date(Date.now()-86400000));
+  const yAtt=getAtt().find(a=>a.staffId===staff.id&&a.date===yesterday);
+  if(!yAtt&&!isWeekOff(new Date(Date.now()-86400000))&&!isHoliday(yesterday)){
+    pendingAbsentId=staff.id;
+    document.getElementById('absentMsg').textContent=staff.name+', you were absent on '+yesterday+'. Please provide a reason.';
+    document.getElementById('absentReason').value='';document.getElementById('absentReqMsg').style.display='none';
+    pendingPunchData={staff};openPopup('absentPopup');return;
+  }
+  doPunch(staff);
+}
+
+function doPunch(staff){
+  const now=new Date(),todayKey=toKey(now),timeStr=now.toLocaleTimeString('en-IN',{hour12:false});
+  const settings=getSettings(),att=getAtt();
+  const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
+  let punchType,status,warningType=null;
+  if(!rec||!rec.inTime){
+    punchType='IN';
+    const diffMin=timeDiffMin(staff.shiftIn||'09:00',timeStr);
+    if(diffMin<=0||diffMin<=settings.grace)status='Present';
+    else{status='Late';warningType='late';}
+    if(rec){rec.inTime=timeStr;rec.status=status;rec.method='face';}
+    else att.push({staffId:staff.id,staffName:staff.name,date:todayKey,inTime:timeStr,outTime:null,status,method:'face',hours:0,reason:'',absentReason:''});
+  }else{
+    punchType='OUT';
+    const hrs=timeDiffHours(rec.inTime,timeStr);
+    const shiftEnd=staff.shiftOut||'18:00';
+    const earlyMin=timeDiffMin(timeStr,shiftEnd);
+    rec.outTime=timeStr;rec.hours=hrs;
+    if(hrs<settings.halfDay)rec.status='Half Day';
+    else if(earlyMin>settings.earlyOut)warningType='early';
+    else if(timeDiffMin(shiftEnd,timeStr)>30)rec.status='Overtime';
+  }
+  setAtt(att);
+  const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
+  if(warningType){pendingPunchData={staff,punchType,timeStr,warningType};showWarningPopup(staff,punchType,timeStr,warningType);}
+  else{syncRecord(latest);showWelcomePopup(staff,punchType,timeStr,latest);renderTodayLog();updateDashStats();}
+}
+
+function syncRecord(rec){if(!rec)return;const m=getSyncMeta();if(m.url)addToQueue({action:'punch',...rec});}
+
+function showWelcomePopup(staff,type,time,rec){
+  document.getElementById('wIcon').textContent=type==='IN'?'🙏':'👋';
+  document.getElementById('wName').textContent=(type==='IN'?'Welcome, ':'Goodbye, ')+staff.name+'!';
+  document.getElementById('wTime').textContent=time;
+  document.getElementById('wSub').textContent=type==='IN'?'Good '+getTimeOfDay()+'! Attendance recorded.':'Have a great day! Worked '+(rec&&rec.hours?rec.hours.toFixed(1):0)+' hrs.';
+  let badges='<span class="punch-badge '+(type==='IN'?'badge-in':'badge-out')+'">'+type+'</span>';
+  if(rec&&rec.status==='Late')badges+='<span class="punch-badge badge-late">LATE</span>';
+  if(rec&&rec.status==='Overtime')badges+='<span class="punch-badge badge-ot">OVERTIME</span>';
+  if(rec&&rec.status==='Half Day')badges+='<span class="punch-badge badge-late">HALF DAY</span>';
+  document.getElementById('wBadges').innerHTML=badges;
+  const si=document.getElementById('syncIndicator');
+  const m=getSyncMeta();
+  si.innerHTML=m.url?'<span style="color:var(--green)">☁️ Syncing to Google Sheets...</span>':'<span style="color:var(--text3)">💾 Saved locally</span>';
+  openPopup('welcomePopup');
+}
+
+function showWarningPopup(staff,punchType,timeStr,warningType){
+  document.getElementById('wpReason').value='';document.getElementById('wpReqMsg').style.display='none';
+  if(warningType==='late'){
+    document.getElementById('wpIcon').textContent='⏰';document.getElementById('wpTitle').textContent='Late Arrival';
+    document.getElementById('wpTime').textContent=timeStr;
+    document.getElementById('wpMsg').textContent='Arriving after shift start ('+( staff.shiftIn||'09:00')+'). Please provide reason.';
+  }else{
+    document.getElementById('wpIcon').textContent='🌅';document.getElementById('wpTitle').textContent='Early Departure';
+    document.getElementById('wpTime').textContent=timeStr;
+    document.getElementById('wpMsg').textContent='Leaving before shift end ('+(staff.shiftOut||'18:00')+'). Please provide reason.';
+  }
+  openPopup('warningPopup');
+}
+
+function submitWarning(){
+  const reason=document.getElementById('wpReason').value.trim();
+  if(!reason){document.getElementById('wpReqMsg').style.display='block';return;}
+  closePopup('warningPopup');
+  if(!pendingPunchData)return;
+  const{staff,punchType,timeStr,warningType}=pendingPunchData;
+  const att=getAtt(),todayKey=toKey(new Date());
+  const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
+  if(rec){
+    if(warningType==='late'){rec.status='Late';rec.reason=reason;}
+    else{rec.earlyOutReason=reason;rec.status=rec.hours<getSettings().halfDay?'Half Day':'Early Out';rec.reason=reason;}
+    setAtt(att);syncRecord(rec);
+  }
+  showWelcomePopup(staff,punchType,timeStr,rec);renderTodayLog();updateDashStats();pendingPunchData=null;
+}
+
+function submitAbsentReason(){
+  const reason=document.getElementById('absentReason').value.trim();
+  if(!reason){document.getElementById('absentReqMsg').style.display='block';return;}
+  closePopup('absentPopup');
+  const yesterday=toKey(new Date(Date.now()-86400000));
+  const att=getAtt();
+  const staff=getStaff().find(s=>s.id===pendingAbsentId);
+  const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===yesterday);
+  if(existing){existing.absentReason=reason;setAtt(att);}
+  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});setAtt(att);}
+  syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,status:'Absent',absentReason:reason,hours:0});
+  if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff);
+  pendingAbsentId=null;pendingPunchData=null;
+}
+
+async function captureFail(){
+  const video=document.getElementById('mainVideo'),canvas=document.getElementById('mainCanvas');
+  canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+  const ctx=canvas.getContext('2d');ctx.save();ctx.scale(-1,1);ctx.drawImage(video,-canvas.width,0);ctx.restore();
+  const photo=canvas.toDataURL('image/jpeg',0.7);
+  const now=new Date(),p=getPending();
+  p.push({id:Date.now().toString(),photo,timestamp:now.toISOString(),date:toKey(now),time:now.toLocaleTimeString('en-IN',{hour12:false}),status:'pending'});
+  setPending(p);openPopup('errorPopup');updateApprBadge();
+}
+
+// ══════════════════════════════════════════════
+// STAFF
+// ══════════════════════════════════════════════
+function renderStaffList(){
+  const staff=getStaff();document.getElementById('staffCount').textContent=staff.length;
+  const el=document.getElementById('staffList');
+  if(!staff.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">👥</div><p>No staff added yet</p></div>';return;}
+  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions"><button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
+}
+function openAddStaff(){
+  document.getElementById('editStaffId').value='';document.getElementById('sName').value='';document.getElementById('sRole').value='';
+  document.getElementById('sIn').value='09:00';document.getElementById('sOut').value='18:00';
+  document.getElementById('staffModalTitle').textContent='➕ Add Staff';
+  regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
+  openModal('staffModal');startRegCam();
+}
+function reRegFace(id){
+  const s=getStaff().find(x=>x.id===id);if(!s)return;
+  document.getElementById('editStaffId').value=id;document.getElementById('sName').value=s.name;document.getElementById('sRole').value=s.role||'';
+  document.getElementById('sIn').value=s.shiftIn;document.getElementById('sOut').value=s.shiftOut;
+  document.getElementById('staffModalTitle').textContent='📷 Re-register — '+s.name;
+  regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
+  openModal('staffModal');startRegCam();
+}
+async function capturePhoto(){
+  if(regPhotos.length>=5){showToast('Max 5 photos');return;}
+  const v=document.getElementById('regVideo'),c=document.getElementById('regCanvas');
+  c.width=v.videoWidth;c.height=v.videoHeight;
+  const ctx=c.getContext('2d');ctx.save();ctx.scale(-1,1);ctx.drawImage(v,-c.width,0);ctx.restore();
+  const data=c.toDataURL('image/jpeg',0.8);regPhotos.push(data);
+  const img=document.createElement('img');img.className='photo-thumb';img.src=data;
+  document.getElementById('photoThumbs').appendChild(img);
+  document.getElementById('capNum').textContent=regPhotos.length;
+  document.getElementById('capInfo').textContent=regPhotos.length+'/5 '+(regPhotos.length>=3?'✅ Ready':'— capture more for accuracy');
+}
+async function saveStaff(){
+  const name=document.getElementById('sName').value.trim(),role=document.getElementById('sRole').value.trim();
+  const shiftIn=document.getElementById('sIn').value,shiftOut=document.getElementById('sOut').value;
+  const eid=document.getElementById('editStaffId').value;
+  if(!name){showToast('Enter staff name');return;}
+  if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
+  if(!regPhotos.length&&eid){
+    const staff=getStaff(),s=staff.find(x=>x.id===eid);
+    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;}
+    setStaff(staff);closeModal('staffModal');stopRegCam();renderStaffList();showToast('Updated!');return;
+  }
+  showToast('Processing face data...');
+  try{
+    const descs=[];
+    for(const p of regPhotos){
+      const img=new Image();img.src=p;await new Promise(r=>{img.onload=r;});
+      const d=await faceapi.detectSingleFace(img,new faceapi.TinyFaceDetectorOptions({inputSize:224})).withFaceLandmarks().withFaceDescriptor();
+      if(d)descs.push(Array.from(d.descriptor));
+    }
+    if(!descs.length){showToast('No face detected. Better lighting needed.');return;}
+    const staff=getStaff();
+    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.descriptors=descs;s.photo=regPhotos[0];}}
+    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,descriptors:descs,photo:regPhotos[0],addedOn:new Date().toISOString()});
+    setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
+    showToast('✅ '+name+' saved with '+descs.length+' face samples!');
+  }catch(e){showToast('Error: '+e.message);}
+}
+function delStaff(id){if(!confirm('Delete this staff?'))return;setStaff(getStaff().filter(s=>s.id!==id));buildMatcher();renderStaffList();showToast('Deleted');}
+function openTiming(id){const s=getStaff().find(x=>x.id===id);if(!s)return;document.getElementById('timingId').value=id;document.getElementById('timingName').textContent='👤 '+s.name;document.getElementById('tIn').value=s.shiftIn;document.getElementById('tOut').value=s.shiftOut;openModal('timingModal');}
+function saveTiming(){const id=document.getElementById('timingId').value,staff=getStaff(),s=staff.find(x=>x.id===id);if(s){s.shiftIn=document.getElementById('tIn').value;s.shiftOut=document.getElementById('tOut').value;}setStaff(staff);closeModal('timingModal');renderStaffList();showToast('Timing updated!');}
+
+// ══════════════════════════════════════════════
+// APPROVALS
+// ══════════════════════════════════════════════
+function renderApprovals(){
+  const pending=getPending().filter(p=>p.status==='pending'),el=document.getElementById('apprList'),staff=getStaff();
+  if(!pending.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">✅</div><p>No pending approvals</p></div>';return;}
+  el.innerHTML=pending.map(p=>`<div class="appr-card"><img class="appr-photo" src="${p.photo}" alt=""><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div><div style="font-size:13px;font-weight:600">Unknown Face</div><div style="font-size:11px;color:var(--text3)">${p.date} at ${p.time}</div></div><span class="tag tag-warn">Pending</span></div><div class="ig"><label class="il">Assign to Staff</label><select class="if" id="as_${p.id}"><option value="">-- Select --</option>${staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('')}</select></div><div class="appr-actions"><button class="btn-approve" onclick="approveEntry('${p.id}')">✅ Approve</button><button class="btn-reject" onclick="rejectEntry('${p.id}')">❌ Reject</button></div></div>`).join('');
+}
+function approveEntry(id){
+  const sid=document.getElementById('as_'+id)?.value,s=getStaff().find(x=>x.id===sid);
+  if(!sid||!s){showToast('Select staff');return;}
+  doPunch(s);const p=getPending(),e=p.find(x=>x.id===id);if(e)e.status='approved';setPending(p);renderApprovals();updateApprBadge();showToast('✅ Approved as '+s.name);
+}
+function rejectEntry(id){const p=getPending(),e=p.find(x=>x.id===id);if(e)e.status='rejected';setPending(p);renderApprovals();updateApprBadge();showToast('Rejected');}
+function updateApprBadge(){const c=getPending().filter(p=>p.status==='pending').length,b=document.getElementById('apprBadge');b.style.display=c?'inline-flex':'none';b.textContent=c;}
+
+// ══════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════
+function loadSettingsUI(){
+  const s=getSettings();
+  document.getElementById('graceVal').textContent=s.grace+' min';
+  document.getElementById('halfDayVal').textContent=s.halfDay+' hrs';
+  document.getElementById('earlyOutVal').textContent=s.earlyOut+' min';
+  document.getElementById('weekOffSel').value=s.weekOff||0;
+  renderHolidays();
+}
+function saveSetting(){const s=getSettings();s.weekOff=parseInt(document.getElementById('weekOffSel').value);setSettings(s);showToast('Updated');}
+function editSetting(key){editingKey=key;const s=getSettings();const labels={grace:'Grace Period (min)',halfDay:'Half Day Threshold (hrs)',earlyOut:'Early Out Threshold (min)'};document.getElementById('settingLbl').textContent=labels[key];document.getElementById('settingInput').value=s[key];openModal('settingModal');}
+function saveSettingVal(){const v=parseInt(document.getElementById('settingInput').value);if(!v||v<1){showToast('Invalid');return;}const s=getSettings();s[editingKey]=v;setSettings(s);loadSettingsUI();closeModal('settingModal');showToast('Updated!');}
+function addHoliday(){const d=document.getElementById('holDate').value,n=document.getElementById('holName').value.trim();if(!d||!n){showToast('Enter date and name');return;}const s=getSettings();if(!s.holidays)s.holidays=[];s.holidays.push({date:d,name:n});setSettings(s);document.getElementById('holDate').value='';document.getElementById('holName').value='';renderHolidays();showToast('Holiday added');}
+function renderHolidays(){const s=getSettings(),el=document.getElementById('holList');if(!s.holidays||!s.holidays.length){el.innerHTML='<div style="font-size:12px;color:var(--text3)">No holidays</div>';return;}el.innerHTML=s.holidays.map((h,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--blush2)"><span style="font-size:11px;color:var(--brand-dark);font-family:monospace">${h.date}</span><span style="flex:1;font-size:13px">${h.name}</span><button class="btn-ic danger" onclick="removeHoliday(${i})" style="width:26px;height:26px;font-size:12px">✕</button></div>`).join('');}
+function removeHoliday(i){const s=getSettings();s.holidays.splice(i,1);setSettings(s);renderHolidays();showToast('Removed');}
+function changePin(){const np=document.getElementById('newPin').value,cp=document.getElementById('confPin').value;if(np.length!==4||!/^\d{4}$/.test(np)){showToast('4 digits required');return;}if(np!==cp){showToast('PINs do not match');return;}const s=getSettings();s.adminPin=np;setSettings(s);document.getElementById('newPin').value='';document.getElementById('confPin').value='';showToast('✅ PIN updated!');}
+
+// ══════════════════════════════════════════════
+// REPORT
+// ══════════════════════════════════════════════
+function setDefaultDates(){
+  const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
+  document.getElementById('rptFrom').value=y+'-'+m+'-01';
+  document.getElementById('rptTo').value=toKey(now);
+  const staff=getStaff(),sel=document.getElementById('rptStaff');
+  sel.innerHTML='<option value="">All Staff</option>'+staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('');
+}
+function generateReport(){
+  const from=document.getElementById('rptFrom').value,to=document.getElementById('rptTo').value,sf=document.getElementById('rptStaff').value;
+  if(!from||!to){showToast('Select dates');return;}
+  const att=getAtt(),staff=getStaff(),dates=getDatesInRange(from,to);
+  const target=sf?staff.filter(s=>s.id===sf):staff;const summaries=[];
+  target.forEach(s=>{
+    let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0;const rows=[];
+    dates.forEach(d=>{
+      const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
+      if(isWO||isHol){rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});return;}
+      workDays++;const rec=att.find(a=>a.staffId===s.id&&a.date===d);
+      if(!rec||!rec.inTime){absent++;rows.push({date:d,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||''});}
+      else{if(rec.status==='Late')late++;if(rec.status==='Half Day')halfDay++;if(rec.status==='Overtime')overtime++;if(rec.status==='Early Out')earlyOut++;if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;rows.push({date:d,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||''});}
+    });
+    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,pct:workDays>0?Math.round(present/workDays*100):0,rows});
+  });
+  lastReportData=summaries;renderHighlights(summaries);renderReportTable(summaries);
+}
+function renderHighlights(summaries){
+  const el=document.getElementById('reportHighlights');
+  const flagged=summaries.filter(s=>(s.workDays>0&&s.absent/s.workDays>0.2)||s.late>=3||s.earlyOut>=3);
+  if(!flagged.length){el.innerHTML='';return;}
+  el.innerHTML='<div class="card" style="border-color:rgba(196,75,53,0.2)"><div class="sec-title" style="color:var(--red)">🚨 Attention Required</div>'+flagged.map(s=>{const tags=[];if(s.workDays>0&&s.absent/s.workDays>0.2)tags.push('<span class="htag htag-abs">Absent '+s.absent+' days</span>');if(s.late>=3)tags.push('<span class="htag htag-late">Late '+s.late+'x</span>');if(s.earlyOut>=3)tags.push('<span class="htag htag-early">Early Out '+s.earlyOut+'x</span>');return '<div class="highlight-card"><div class="highlight-name">⚠️ '+s.staff.name+'</div><div class="highlight-tags">'+tags.join('')+'</div></div>';}).join('')+'</div>';
+}
+function renderReportTable(summaries){
+  const el=document.getElementById('reportTable');if(!summaries.length){el.innerHTML='<div class="empty-state"><p>No data</p></div>';return;}
+  el.innerHTML=summaries.map(s=>`<div style="margin-bottom:20px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:10px;background:var(--blush2);border-radius:10px;flex-wrap:wrap"><div style="flex:1;min-width:120px"><div style="font-weight:700;font-size:14px">${s.staff.name}</div><div style="font-size:11px;color:var(--text3)">${s.staff.role||''} • ${s.pct}% Attendance</div></div><div style="display:flex;gap:4px;flex-wrap:wrap">${['✅ '+s.present,'❌ '+s.absent+' Abs',s.late?'⏰ '+s.late+' Late':'',s.earlyOut?'🌅 '+s.earlyOut+' Early':'',s.overtime?'🔵 '+s.overtime+' OT':'',s.halfDay?'🔶 '+s.halfDay+' HD':''].filter(Boolean).map(t=>'<span class="htag" style="background:var(--blush3);color:var(--text)">'+t+'</span>').join('')}</div></div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--blush2)"><th style="padding:6px;text-align:left;color:var(--text3)">Date</th><th style="padding:6px;text-align:left;color:var(--text3)">Status</th><th style="padding:6px;text-align:left;color:var(--text3)">IN</th><th style="padding:6px;text-align:left;color:var(--text3)">OUT</th><th style="padding:6px;text-align:left;color:var(--text3)">Hrs</th><th style="padding:6px;text-align:left;color:var(--text3)">Reason</th></tr></thead><tbody>${s.rows.map(r=>{const bg=r.status==='Absent'?'rgba(196,75,53,0.06)':r.status==='Late'?'rgba(196,122,32,0.06)':'';const sc=r.status==='Absent'?'var(--red)':r.status==='Late'?'var(--orange)':r.status==='Present'||r.status==='Overtime'?'var(--green)':'var(--text2)';return '<tr style="background:'+bg+';border-bottom:1px solid var(--blush2)"><td style="padding:6px;font-family:monospace;font-size:11px">'+r.date+'</td><td style="padding:6px;font-weight:600;color:'+sc+'">'+r.status+'</td><td style="padding:6px;font-family:monospace">'+r.inTime+'</td><td style="padding:6px;font-family:monospace">'+r.outTime+'</td><td style="padding:6px">'+r.hours+'</td><td style="padding:6px;font-size:11px;color:var(--orange);font-style:italic">'+r.reason+'</td></tr>';}).join('')}</tbody></table></div></div>`).join('');
+}
+function exportReportCSV(){if(!lastReportData.length){showToast('Generate report first');return;}const rows=[['Staff','Role','Date','Status','IN','OUT','Hours','Reason']];lastReportData.forEach(s=>{s.rows.forEach(r=>{rows.push([s.staff.name,s.staff.role||'',r.date,r.status,r.inTime,r.outTime,r.hours,r.reason]);});});dlCSV(rows,'varnica_report.csv');}
+
+// ══════════════════════════════════════════════
+// TODAY LOG
+// ══════════════════════════════════════════════
+function renderTodayLog(){
+  const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today);
+  ['todayLogMini','dashLog'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    if(!att.length){el.innerHTML='<div class="empty-state" style="padding:16px"><div style="font-size:28px">📭</div><p style="font-size:12px;margin-top:6px">No records yet</p></div>';return;}
+    el.innerHTML=att.slice().reverse().map(a=>{const type=a.outTime?'out':a.status==='Absent'?'fail':'in';const lbl=a.outTime?'OUT':a.status;const lc=a.outTime?'lb-out':a.status==='Late'?'lb-late':a.status==='Absent'?'lb-fail':'lb-in';return '<div class="log-item"><div class="log-dot '+type+'"></div><div class="log-name">'+a.staffName+'</div><div class="log-time">'+(a.outTime||a.inTime||'--')+'</div><span class="log-badge '+lc+'">'+lbl+'</span></div>';}).join('');
+  });
+}
+function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staff=getStaff(),present=att.filter(a=>a.status!=='Absent').length,late=att.filter(a=>a.status==='Late').length;document.getElementById('sPresent').textContent=present;document.getElementById('sAbsent').textContent=Math.max(0,staff.length-present);document.getElementById('sLate').textContent=late;document.getElementById('sTotal').textContent=staff.length;}
+
+// ══════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════
+function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(id==='punchPage'){document.querySelector('.nav-btn').classList.add('active');if(!mainStream)startMainCam();}}
+function goAdmin(){curPin='';document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));document.getElementById('pinError').textContent='';document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('adminLoginPage').classList.add('active');}
+function adminLogout(){showPage('punchPage');}
+function aTab(tab){['dash','staff','report','appr','sync','settings'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings'].indexOf(tab);if(idx>=0)document.querySelectorAll('.tab-btn')[idx].classList.add('active');if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}}
+
+// PIN
+function pk(k){if(curPin.length>=4)return;curPin+=k;document.getElementById('d'+(curPin.length-1)).classList.add('filled');if(curPin.length===4)checkPin();}
+function pd(){if(!curPin.length)return;document.getElementById('d'+(curPin.length-1)).classList.remove('filled');curPin=curPin.slice(0,-1);}
+function checkPin(){const s=getSettings();setTimeout(()=>{if(curPin===s.adminPin){curPin='';document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));showAdminPanel();}else{document.getElementById('pinError').textContent='✗ Incorrect PIN';curPin='';document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));}},200);}
+function showAdminPanel(){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('adminPage').classList.add('active');aTab('dash');renderTodayLog();updateDashStats();updateApprBadge();}
+
+// MODAL/POPUP
+function openModal(id){document.getElementById(id).classList.add('active');}
+function closeModal(id){document.getElementById(id).classList.remove('active');if(id==='staffModal')stopRegCam();}
+function openPopup(id){document.getElementById(id).classList.add('active');}
+function closePopup(id){document.getElementById(id).classList.remove('active');}
+function resetStatusCard(){const c=document.getElementById('statusCard');c.className='status-card';c.innerHTML='<div class="status-icon">👤</div><div style="font-size:14px;color:var(--text2)">Waiting for face scan...</div><div style="font-size:11px;color:var(--text3)">Look directly at the camera</div>';}
+
+// EXPORT
+function exportAllCSV(){const att=getAtt();if(!att.length){showToast('No data');return;}dlCSV([['Date','Staff','IN','OUT','Status','Hours','Reason','Absent Reason'],...att.map(a=>[a.date,a.staffName,a.inTime||'',a.outTime||'',a.status,a.hours||0,a.reason||'',a.absentReason||''])],'varnica_attendance.csv');}
+function exportStaffCSV(){const s=getStaff();if(!s.length){showToast('No staff');return;}dlCSV([['Name','Role','Shift In','Shift Out','Face'],...s.map(x=>[x.name,x.role||'',x.shiftIn,x.shiftOut,x.descriptors?.length?'Yes':'No'])],'varnica_staff.csv');}
+function dlCSV(rows,name){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=name;a.click();showToast('Downloaded!');}
+
+// HELPERS
+function toKey(d){return d.toISOString().split('T')[0];}
+function timeDiffMin(a,b){const[ah,am]=a.split(':').map(Number);const[bh,bm]=b.split(':').map(Number);return(bh*60+bm)-(ah*60+am);}
+function timeDiffHours(a,b){return timeDiffMin(a,b)/60;}
+function getTimeOfDay(){const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';}
+function isWeekOff(date){return date.getDay()===parseInt(getSettings().weekOff||0);}
+function isHoliday(ds){return(getSettings().holidays||[]).some(h=>h.date===ds);}
+function getDatesInRange(from,to){const dates=[];let cur=new Date(from+'T00:00:00');const end=new Date(to+'T00:00:00');while(cur<=end){dates.push(toKey(cur));cur=new Date(cur.getTime()+86400000);}return dates;}
+let toastTmr;
+function showToast(msg){clearTimeout(toastTmr);const old=document.querySelector('.toast');if(old)old.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);toastTmr=setTimeout(()=>t.remove(),3000);}
+
+init();
+</script>
+</body>
+</html>
