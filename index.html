@@ -641,9 +641,17 @@ function installPWA(){
 async function checkLicense(){
   // If no license URL configured, skip check (development mode)
   if(!LICENSE_URL||LICENSE_URL==='MASTER_SCRIPT_URL_HERE'){
-    console.log('License URL not configured — running in dev mode');
+    console.log('License URL not configured — dev mode');
     return true;
   }
+  // Add timeout to prevent hanging
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try{
+    const res = await fetch(LICENSE_URL+'?tool='+TOOL_ID+'&t='+Date.now(), {
+      method:'GET', signal: controller.signal
+    });
+    clearTimeout(timeout);
   try{
     const res=await fetch(LICENSE_URL+'?tool='+TOOL_ID+'&t='+Date.now(),{method:'GET'});
     const data=await res.json();
@@ -656,7 +664,8 @@ async function checkLicense(){
       return false;
     }
   }catch(e){
-    // Offline — use cached license
+    clearTimeout(timeout);
+    // Offline or timeout — use cached license
     const cached=DB.get('licenseCache');
     if(cached&&cached.status==='ACTIVE'){
       const hoursSince=(Date.now()-cached.checked)/3600000;
@@ -713,7 +722,7 @@ async function loadFaceApi(){
     bar.style.width='100%';msg.textContent='Ready!';
     faceLoaded=true;
     await buildMatcher();
-    setTimeout(()=>document.getElementById('loadingScreen').style.display='none',600);
+    document.getElementById('loadingScreen').style.display='none';
   }catch(e){
     msg.textContent='Model load failed. Check internet & retry.';
     document.getElementById('loadingBar').style.background='var(--red)';
