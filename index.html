@@ -572,8 +572,8 @@ select.if{appearance:none;}
 // ══════════════════════════════════════════════
 // CONFIG — MASTER LICENSE CHECK
 // ══════════════════════════════════════════════
-const LICENSE_URL = 'MASTER_SCRIPT_URL_HERE'; // Vimalji will replace this
-const TOOL_ID = 'varnica-attendance-v1';
+const LICENSE_URL = 'https://script.google.com/macros/s/AKfycbzzEedntv02oADlY3uUhxKi4TadcrN1owDb8fD35w9F6mOWdYv_s3unsEGx-oqvCH7f/exec';
+const TOOL_ID = 'varnica-attendance';
 
 // ══════════════════════════════════════════════
 // IMAGES (embedded)
@@ -639,25 +639,20 @@ function installPWA(){
 // LICENSE CHECK
 // ══════════════════════════════════════════════
 async function checkLicense(){
-  // If no license URL configured, skip check (development mode)
   if(!LICENSE_URL||LICENSE_URL==='MASTER_SCRIPT_URL_HERE'){
     console.log('License URL not configured — dev mode');
     return true;
   }
-  // Add timeout to prevent hanging
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 8000);
   try{
     const res = await fetch(LICENSE_URL+'?tool='+TOOL_ID+'&t='+Date.now(), {
       method:'GET', signal: controller.signal
     });
     clearTimeout(timeout);
-  try{
-    const res=await fetch(LICENSE_URL+'?tool='+TOOL_ID+'&t='+Date.now(),{method:'GET'});
-    const data=await res.json();
-    if(data.status==='ACTIVE'){
-      // Cache license for offline use (24 hours)
-      DB.set('licenseCache',{status:'ACTIVE',expiry:data.expiry,checked:Date.now()});
+    const data = await res.json();
+    if(data.status && data.status.toLowerCase()==='active'){
+      DB.set('licenseCache',{status:'ACTIVE',expiry:String(data.expiry),checked:Date.now()});
       return true;
     } else {
       showExpired(data.message||'License expired');
@@ -665,13 +660,11 @@ async function checkLicense(){
     }
   }catch(e){
     clearTimeout(timeout);
-    // Offline or timeout — use cached license
     const cached=DB.get('licenseCache');
     if(cached&&cached.status==='ACTIVE'){
       const hoursSince=(Date.now()-cached.checked)/3600000;
-      if(hoursSince<24) return true; // valid for 24hrs offline
+      if(hoursSince<24) return true;
     }
-    // Cannot verify — allow but warn
     console.log('License check failed (offline?) — allowing with warning');
     return true;
   }
