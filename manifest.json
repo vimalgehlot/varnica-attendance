@@ -1,8 +1,8 @@
 {
   "name": "Varnica Jewels — Staff Attendance",
   "short_name": "VJ Attendance",
-  "description": "Staff Attendance System for Varnica Jewels",
-  "start_url": "./",
+  "description": "Varnica Jewels Staff Attendance System with Face Recognition",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#F8EEE8",
   "theme_color": "#B8955A",
@@ -22,5 +22,6 @@
     }
   ],
   "categories": ["business", "productivity"],
-  "lang": "en-IN"
+  "lang": "en-IN",
+  "dir": "ltr"
 }

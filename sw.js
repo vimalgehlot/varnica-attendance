@@ -1,53 +1,96 @@
-const CACHE_NAME = 'varnica-attendance-v1';
-const ASSETS = [
+// ============================================================
+// VARNICA JEWELS — Service Worker v2.0
+// Developer: Vimal Gehlot
+// ============================================================
+
+const CACHE_NAME = 'varnica-attendance-v2';
+
+// Files to cache for offline use
+const STATIC_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap',
-  'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
-  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/tiny_face_detector_model-weights_manifest.json',
-  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/tiny_face_detector_model-shard1',
-  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_landmark_68_model-weights_manifest.json',
-  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_landmark_68_model-shard1',
-  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_recognition_model-weights_manifest.json',
-  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_recognition_model-shard1',
-  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_recognition_model-shard2'
+  'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js'
 ];
 
-// Install - cache all assets
-self.addEventListener('install', e => {
-  e.waitUntil(
+// External domains that should NEVER be cached/intercepted
+const BYPASS_DOMAINS = [
+  'script.google.com',
+  'script.googleusercontent.com',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com'
+];
+
+// ============================================================
+// INSTALL — Cache static assets
+// ============================================================
+self.addEventListener('install', event => {
+  console.log('[SW] Installing Varnica SW v2...');
+  event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      console.log('Caching all assets...');
-      return Promise.allSettled(
-        ASSETS.map(url => cache.add(url).catch(err => console.log('Cache miss:', url)))
-      );
-    }).then(() => self.skipWaiting())
+      return cache.addAll(['./', './index.html', './manifest.json'])
+        .catch(e => console.log('[SW] Cache error (non-fatal):', e));
+    })
   );
+  self.skipWaiting();
 });
 
-// Activate - clean old caches
-self.addEventListener('activate', e => {
-  e.waitUntil(
+// ============================================================
+// ACTIVATE — Clean old caches
+// ============================================================
+self.addEventListener('activate', event => {
+  console.log('[SW] Activating Varnica SW v2...');
+  event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+      Promise.all(
+        keys.filter(k => k !== CACHE_NAME).map(k => {
+          console.log('[SW] Deleting old cache:', k);
+          return caches.delete(k);
+        })
+      )
+    )
   );
+  self.clients.claim();
 });
 
-// Fetch - serve from cache, fallback to network
-self.addEventListener('fetch', e => {
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(response => {
-        if (!response || response.status !== 200) return response;
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+// ============================================================
+// FETCH — Smart routing
+// ============================================================
+self.addEventListener('fetch', event => {
+  const url = event.request.url;
+
+  // 1. Always bypass external/API domains (no cache, no intercept)
+  const shouldBypass = BYPASS_DOMAINS.some(domain => url.includes(domain));
+  if (shouldBypass) {
+    // Passthrough — let browser handle directly
+    return;
+  }
+
+  // 2. For same-origin requests — cache-first strategy
+  event.respondWith(
+    caches.match(event.request).then(cached => {
+      if (cached) {
+        // Return cached version
+        return cached;
+      }
+      // Not in cache — fetch from network
+      return fetch(event.request).then(response => {
+        // Cache valid responses for static assets
+        if (
+          response &&
+          response.status === 200 &&
+          response.type === 'basic' &&
+          (url.includes('.html') || url.includes('.json') || url.includes('.js') || url.includes('.css') || url.includes('.png') || url.includes('.jpg'))
+        ) {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseToCache);
+          });
+        }
         return response;
       }).catch(() => {
-        // Offline fallback
-        if (e.request.destination === 'document') {
+        // Offline fallback — return cached index.html
+        if (event.request.destination === 'document') {
           return caches.match('./index.html');
         }
       });
