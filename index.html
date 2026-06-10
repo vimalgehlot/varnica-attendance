@@ -310,6 +310,23 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
 .btn-primary:active{transform:translate(1px,1px);box-shadow:1px 1px 0 rgba(70,25,0,0.3)!important;}
 .btn-outline{box-shadow:-1px -1px 0 rgba(255,220,140,0.3),2px 2px 0 rgba(70,25,0,0.2),0 2px 7px rgba(0,0,0,0.1);}
 body{-webkit-font-smoothing:antialiased;font-weight:500;}
+
+/* ══ PAYROLL MODULE ══ */
+.payroll-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.salary-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--blush2);font-size:12px;}
+.salary-amount{font-weight:700;font-size:15px;color:var(--brand-deep);}
+.slip-btn{background:var(--brand);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;}
+.slip-section{border-top:1px solid #ddd;margin-top:8px;padding-top:8px;}
+.deduction{color:var(--red);}
+.earning{color:var(--green);}
+.net-row{background:var(--brand-deep);color:#fff;padding:8px 12px;border-radius:8px;margin-top:8px;display:flex;justify-content:space-between;}
+/* ══ WHATSAPP ══ */
+.btn-wa{background:#25D366!important;color:#fff!important;font-size:12px!important;padding:8px 16px!important;margin-top:6px!important;}
+.btn-wa:hover{background:#128C7E!important;}
+/* ══ BRANCH ══ */
+.branch-tag{background:var(--brand);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px;vertical-align:middle;}
+.branch-card{background:var(--blush2);border-radius:12px;padding:12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;}
+.branch-active{border:2px solid var(--brand);}
 </style>
 </head>
 <body>
@@ -394,6 +411,22 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div class="log-title">📋 Today's Attendance</div>
       <div class="log-scroll" id="todayLogMini"></div>
     </div>
+    <div class="card">
+      <div class="sec-title">🏢 Branch Management</div>
+      <p style="font-size:12px;color:var(--text3);margin-bottom:10px">Multiple branches manage karo — har branch ka alag data!</p>
+      <div id="branchList"></div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--blush2)">
+        <div class="payroll-grid">
+          <div><label class="il">Branch Name</label><input type="text" class="if" id="newBranchName" placeholder="e.g. Station Branch"></div>
+          <div><label class="il">Location</label><input type="text" class="if" id="newBranchLoc" placeholder="e.g. Jodhpur"></div>
+        </div>
+        <button class="btn btn-primary" onclick="addBranch()" style="margin-top:8px">+ Add Branch</button>
+      </div>
+      <div style="margin-top:12px;padding:10px;background:var(--blush2);border-radius:10px;font-size:12px">
+        <b>Active Branch:</b> <span id="activeBranchName" style="color:var(--brand-deep);font-weight:700"></span>
+        <span id="activeBranchTag" class="branch-tag"></span>
+      </div>
+    </div>
   </div>
   <div class="dev-tag">Developer — Vimal Gehlot</div>
   <div class="bottom-nav">
@@ -441,6 +474,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <button class="tab-btn" onclick="aTab('sync')">☁️ Sync</button>
     <button class="tab-btn" onclick="aTab('settings')">⚙️ Settings</button>
     <button class="tab-btn" onclick="aTab('manual')">✏️ Manual</button>
+    <button class="tab-btn" onclick="aTab('payroll')">💰 Payroll</button>
   </div>
 
 
@@ -479,6 +513,57 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div id="manLogList"></div>
     </div>
   </div>
+
+  <!-- PAYROLL MODULE -->
+  <div class="admin-scroll hidden" id="tabPayroll">
+    <!-- Salary Settings Card -->
+    <div class="card" id="salarySettingsCard" style="display:none">
+      <div class="sec-title">⚙️ Salary Settings — <span id="salSettingName"></span></div>
+      <div class="payroll-grid">
+        <div><label class="il">Basic Salary (₹)</label><input type="number" class="if" id="salBasic" placeholder="15000"></div>
+        <div><label class="il">Allowances (₹)</label><input type="number" class="if" id="salAllow" placeholder="500"></div>
+      </div>
+      <div class="payroll-grid">
+        <div><label class="il">Overtime Rate (₹/hr)</label><input type="number" class="if" id="salOT" placeholder="150"></div>
+        <div><label class="il">Late Deduction (₹/instance)</label><input type="number" class="if" id="salLate" placeholder="150"></div>
+      </div>
+      <div><label class="il">Absent Deduction (₹/day)</label><input type="number" class="if" id="salAbsent" placeholder="600" style="max-width:200px"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-primary" onclick="saveSalarySettings()">💾 Save Settings</button>
+        <button class="btn btn-outline" onclick="document.getElementById('salarySettingsCard').style.display='none'">✕ Cancel</button>
+      </div>
+    </div>
+
+    <!-- Monthly Payroll Calculator -->
+    <div class="card">
+      <div class="sec-title">💰 Monthly Payroll Calculator</div>
+      <div class="payroll-grid" style="margin-bottom:10px">
+        <div><label class="il">Month</label>
+          <select class="if" id="payMonth">
+            <option value="1">January</option><option value="2">February</option>
+            <option value="3">March</option><option value="4">April</option>
+            <option value="5">May</option><option value="6">June</option>
+            <option value="7">July</option><option value="8">August</option>
+            <option value="9">September</option><option value="10">October</option>
+            <option value="11">November</option><option value="12">December</option>
+          </select></div>
+        <div><label class="il">Year</label>
+          <input type="number" class="if" id="payYear" value="2026" min="2020" max="2099"></div>
+      </div>
+      <button class="btn btn-primary" onclick="calcAllSalaries()">📊 Calculate All Salaries</button>
+    </div>
+
+    <!-- Payroll Results -->
+    <div class="card" id="payrollResultCard" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="sec-title">📋 Payroll Summary</div>
+        <button class="btn btn-outline" onclick="exportPayrollExcel()" style="font-size:11px">⬇️ Export</button>
+      </div>
+      <div id="payrollTable"></div>
+      <div id="payrollTotal" class="net-row" style="margin-top:12px"></div>
+    </div>
+  </div>
+
   <!-- DASHBOARD -->
   <div class="admin-scroll" id="tabDash">
     <div class="stats-grid">
@@ -592,6 +677,22 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="btn btn-outline" onclick="exportAllCSV()">📊 Export Attendance CSV</button>
       <button class="btn btn-secondary" onclick="exportStaffCSV()" style="margin-top:8px">👥 Export Staff CSV</button>
     </div>
+    <div class="card">
+      <div class="sec-title">🏢 Branch Management</div>
+      <p style="font-size:12px;color:var(--text3);margin-bottom:10px">Multiple branches manage karo — har branch ka alag data!</p>
+      <div id="branchList"></div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--blush2)">
+        <div class="payroll-grid">
+          <div><label class="il">Branch Name</label><input type="text" class="if" id="newBranchName" placeholder="e.g. Station Branch"></div>
+          <div><label class="il">Location</label><input type="text" class="if" id="newBranchLoc" placeholder="e.g. Jodhpur"></div>
+        </div>
+        <button class="btn btn-primary" onclick="addBranch()" style="margin-top:8px">+ Add Branch</button>
+      </div>
+      <div style="margin-top:12px;padding:10px;background:var(--blush2);border-radius:10px;font-size:12px">
+        <b>Active Branch:</b> <span id="activeBranchName" style="color:var(--brand-deep);font-weight:700"></span>
+        <span id="activeBranchTag" class="branch-tag"></span>
+      </div>
+    </div>
   </div>
   <div class="dev-tag">Developer — Vimal Gehlot</div>
 </div>
@@ -604,6 +705,10 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <input type="hidden" id="editStaffId">
     <div class="ig"><label class="il">Full Name *</label><input type="text" class="if" id="sName" placeholder="e.g. Ramesh Kumar"></div>
     <div class="ig"><label class="il">Role</label><input type="text" class="if" id="sRole" placeholder="e.g. Sales Executive"></div>
+    <div class="irow">
+      <div class="ig"><label class="il">📱 Phone (WhatsApp)</label><input type="tel" class="if" id="sPhone" placeholder="9876543210" maxlength="10"></div>
+      <div class="ig"><label class="il">💰 Basic Salary (₹)</label><input type="number" class="if" id="sSalary" placeholder="15000" min="0"></div>
+    </div>
     <div class="irow">
       <div class="ig"><label class="il">Shift Start *</label><input type="time" class="if" id="sIn" value="09:00"></div>
       <div class="ig"><label class="il">Shift End *</label><input type="time" class="if" id="sOut" value="18:00"></div>
@@ -649,7 +754,8 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="popup-badges" id="wBadges"></div>
     <div class="popup-sub" id="wSub"></div>
     <div id="syncIndicator" style="font-size:11px;margin-top:6px"></div>
-    <button class="btn btn-primary" onclick="closePopup('welcomePopup')" style="margin-top:10px">OK ✓</button>
+    <button class="btn btn-primary" onclick="closeWelcomeAndWA()" style="margin-top:10px">OK ✓</button>
+    <button class="btn btn-wa" id="wpWaBtn" onclick="sendStaffWA()" style="display:none">📱 WhatsApp Alert</button>
   </div>
 </div>
 
@@ -822,6 +928,7 @@ async function init(){
   await loadFaceApi();
   checkConnection();setInterval(checkConnection,10000);
   // Camera via Start Scan button only
+  updateBranchHeader();
   renderTodayLog();setDefaultDates();loadSheetUrl();updateSyncUI();
 }
 
@@ -1107,6 +1214,10 @@ function doPunch(staff){
 function syncRecord(rec){if(!rec)return;const m=getSyncMeta();if(m.url)addToQueue({action:'punch',...rec});}
 
 function showWelcomePopup(staff,type,time,rec){
+  // Store for WhatsApp
+  _waStaff=staff;_waType=type;_waTime=time;
+  const wpBtn=document.getElementById('wpWaBtn');
+  if(wpBtn)wpBtn.style.display=staff.phone?'block':'none';
   document.getElementById('wIcon').textContent=type==='IN'?'🙏':'👋';
   document.getElementById('wName').textContent=(type==='IN'?'Welcome, ':'Goodbye, ')+staff.name+'!';
   document.getElementById('wTime').textContent=time;
@@ -1215,6 +1326,8 @@ async function capturePhoto(){
 async function saveStaff(){
   const name=document.getElementById('sName').value.trim(),role=document.getElementById('sRole').value.trim();
   const shiftIn=document.getElementById('sIn').value,shiftOut=document.getElementById('sOut').value;
+  const phone=(document.getElementById('sPhone')||{value:''}).value.trim();
+  const basicSalary=parseFloat((document.getElementById('sSalary')||{value:0}).value)||0;
   const eid=document.getElementById('editStaffId').value;
   if(!name){showToast('Enter staff name');return;}
   if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
@@ -1233,8 +1346,8 @@ async function saveStaff(){
     }
     if(!descs.length){showToast('No face detected. Better lighting needed.');return;}
     const staff=getStaff();
-    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.descriptors=descs;s.photo=regPhotos[0];}}
-    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,descriptors:descs,photo:regPhotos[0],addedOn:new Date().toISOString()});
+    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.phone=phone;s.basicSalary=basicSalary;s.descriptors=descs;s.photo=regPhotos[0];}}
+    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,phone,basicSalary,descriptors:descs,photo:regPhotos[0],addedOn:new Date().toISOString()});
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
     showToast('✅ '+name+' saved with '+descs.length+' face samples!');
   }catch(e){showToast('Error: '+e.message);}
@@ -1428,6 +1541,351 @@ function delManEntry(){
   setAtt(getAtt().filter(a=>!(a.staffId===sid&&a.date===date)));
   renderTodayLog();updateDashStats();showToast('🗑️ Record delete ho gaya');loadManRec();
 }
+
+
+// ═══════════════════════════════════════════════════════════
+// WHATSAPP INTEGRATION (Free — wa.me links)
+// ═══════════════════════════════════════════════════════════
+let _waStaff = null, _waType = '', _waTime = '';
+
+function sendStaffWA(){
+  if(!_waStaff) return;
+  const phone = _waStaff.phone;
+  if(!phone||phone.length<10){showToast('Phone number nahi hai staff ka');return;}
+  const branch = getCurrentBranchName();
+  const msg = `🏢 *${branch} — Attendance Alert*\n\n` +
+    `👤 Staff: ${_waStaff.name}\n` +
+    `📅 Date: ${toKey(new Date())}\n` +
+    `⏰ Status: ${_waType}\n` +
+    `🕐 Time: ${_waTime}\n` +
+    `\n_Varnica Jewels Attendance System_`;
+  const url = `https://wa.me/91${phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`;
+  window.open(url,'_blank');
+}
+
+function sendAdminWA(staffName, status, reason, date){
+  const settings = getSettings();
+  const adminPhone = settings.adminPhone || '';
+  if(!adminPhone){showToast('Admin phone settings mein set karo');return;}
+  const branch = getCurrentBranchName();
+  const msg = `⚠️ *${branch} — Attendance Alert*\n\n` +
+    `👤 Staff: ${staffName}\n` +
+    `📅 Date: ${date||toKey(new Date())}\n` +
+    `❗ Status: ${status}\n` +
+    (reason?`📝 Reason: ${reason}\n`:'') +
+    `\n_Varnica Jewels Admin Alert_`;
+  const url = `https://wa.me/91${adminPhone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`;
+  window.open(url,'_blank');
+}
+
+function closeWelcomeAndWA(){
+  closePopup('welcomePopup');
+  _waStaff=null;_waType='';_waTime='';
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAYROLL MODULE
+// ═══════════════════════════════════════════════════════════
+const getSalarySettings=()=>DB.get('salary_settings')||{};
+const setSalarySettings=v=>DB.set('salary_settings',v);
+
+function getStaffSalary(staffId){
+  const ss=getSalarySettings();
+  const staff=getStaff().find(s=>s.id===staffId);
+  return ss[staffId]||{
+    basicSalary: staff?.basicSalary||0,
+    allowances: 0,
+    overtimeRate: 100,
+    lateDeduction: 100,
+    absentDeduction: Math.round((staff?.basicSalary||0)/26)
+  };
+}
+
+function openSalarySettings(staffId){
+  const staff=getStaff().find(s=>s.id===staffId);
+  if(!staff)return;
+  const ss=getStaffSalary(staffId);
+  document.getElementById('salSettingName').textContent=staff.name;
+  document.getElementById('salBasic').value=ss.basicSalary||staff.basicSalary||0;
+  document.getElementById('salAllow').value=ss.allowances||0;
+  document.getElementById('salOT').value=ss.overtimeRate||100;
+  document.getElementById('salLate').value=ss.lateDeduction||100;
+  document.getElementById('salAbsent').value=ss.absentDeduction||0;
+  document.getElementById('salarySettingsCard').dataset.staffId=staffId;
+  document.getElementById('salarySettingsCard').style.display='block';
+  document.getElementById('salarySettingsCard').scrollIntoView({behavior:'smooth'});
+}
+
+function saveSalarySettings(){
+  const staffId=document.getElementById('salarySettingsCard').dataset.staffId;
+  if(!staffId)return;
+  const ss=getSalarySettings();
+  ss[staffId]={
+    basicSalary: parseFloat(document.getElementById('salBasic').value)||0,
+    allowances: parseFloat(document.getElementById('salAllow').value)||0,
+    overtimeRate: parseFloat(document.getElementById('salOT').value)||100,
+    lateDeduction: parseFloat(document.getElementById('salLate').value)||100,
+    absentDeduction: parseFloat(document.getElementById('salAbsent').value)||0
+  };
+  setSalarySettings(ss);
+  document.getElementById('salarySettingsCard').style.display='none';
+  showToast('✅ Salary settings saved!');
+}
+
+function calcMonthSalary(staffId, month, year){
+  const ss=getStaffSalary(staffId);
+  const staff=getStaff().find(s=>s.id===staffId);
+  if(!staff)return null;
+
+  const monthStr=String(year)+'-'+String(month).padStart(2,'0');
+  const att=getAtt().filter(a=>a.staffId===staffId&&a.date.startsWith(monthStr));
+
+  let present=0,late=0,absent=0,leave=0,halfDay=0,overtimeHrs=0,earlyOut=0;
+  att.forEach(r=>{
+    if(r.status==='Present'||r.status==='Face Fail → Approved')present++;
+    else if(r.status==='Late'){present++;late++;}
+    else if(r.status==='Overtime'){present++;const extra=Math.max(0,(r.hours||0)-9);overtimeHrs+=extra;}
+    else if(r.status==='Absent')absent++;
+    else if(r.status==='Leave')leave++;
+    else if(r.status==='Half Day'){halfDay++;present+=0.5;}
+    else if(r.status==='Early OUT')present++;
+    if(r.status==='Early OUT')earlyOut++;
+  });
+
+  const workingDays=26;
+  const perDaySalary=(ss.basicSalary||0)/workingDays;
+  const earnedBasic=perDaySalary*(present+halfDay*0.5);
+  const otPay=overtimeHrs*(ss.overtimeRate||100);
+  const allowances=ss.allowances||0;
+  const gross=earnedBasic+otPay+allowances;
+
+  const lateDeduct=late*(ss.lateDeduction||0);
+  const absentDeduct=absent*(ss.absentDeduction||perDaySalary);
+  const totalDeduct=lateDeduct+absentDeduct;
+  const net=Math.max(0,gross-totalDeduct);
+
+  return{staff,present,late,absent,leave,halfDay,overtimeHrs,earlyOut,
+    earnedBasic:Math.round(earnedBasic),otPay:Math.round(otPay),
+    allowances,gross:Math.round(gross),lateDeduct:Math.round(lateDeduct),
+    absentDeduct:Math.round(absentDeduct),totalDeduct:Math.round(totalDeduct),
+    net:Math.round(net),basicSalary:ss.basicSalary||0};
+}
+
+function calcAllSalaries(){
+  const month=parseInt(document.getElementById('payMonth').value);
+  const year=parseInt(document.getElementById('payYear').value);
+  const staff=getStaff();
+  if(!staff.length){showToast('Pehle staff register karo');return;}
+
+  const results=staff.map(s=>calcMonthSalary(s.id,month,year)).filter(Boolean);
+  const totalNet=results.reduce((s,r)=>s+r.net,0);
+
+  const monthNames=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const periodLabel=`${monthNames[month]} ${year}`;
+
+  const html=results.map(r=>`
+    <div class="salary-row" style="flex-wrap:wrap;gap:6px">
+      <div style="min-width:130px">
+        <div style="font-weight:700;font-size:13px">${r.staff.name}</div>
+        <div style="color:var(--text3);font-size:11px">${r.staff.role||''}</div>
+      </div>
+      <div style="font-size:11px;color:var(--text2)">
+        ✅${r.present} ⏰${r.late} ❌${r.absent} 📋${r.leave}
+        ${r.overtimeHrs>0?'⭐'+r.overtimeHrs.toFixed(1)+'h':''}
+      </div>
+      <div style="text-align:right;flex:1">
+        <div class="salary-amount">₹${r.net.toLocaleString('en-IN')}</div>
+        ${r.totalDeduct>0?`<div style="font-size:10px;color:var(--red)">-₹${r.totalDeduct.toLocaleString('en-IN')} deductions</div>`:''}
+      </div>
+      <div style="display:flex;gap:4px">
+        <button class="slip-btn" onclick="openSalarySettings('${r.staff.id}')">⚙️ Settings</button>
+        <button class="slip-btn" onclick="printSalarySlip('${r.staff.id}',${month},${year})">🖨️ Slip</button>
+        ${r.staff.phone?`<button class="slip-btn" style="background:#25D366" onclick="sendSalaryWA('${r.staff.id}',${month},${year})">📱 WA</button>`:''}
+      </div>
+    </div>`).join('');
+
+  document.getElementById('payrollTable').innerHTML=html;
+  document.getElementById('payrollTotal').innerHTML=`<span>💰 Total Payroll — ${periodLabel}</span><span style="font-size:18px;font-weight:800">₹${totalNet.toLocaleString('en-IN')}</span>`;
+  document.getElementById('payrollResultCard').style.display='block';
+}
+
+function printSalarySlip(staffId, month, year){
+  const r=calcMonthSalary(staffId,month,year);
+  if(!r){showToast('No data');return;}
+  const monthNames=['','January','February','March','April','May','June','July','August','September','October','November','December'];
+  const branch=getCurrentBranchName();
+  const html=`<!DOCTYPE html><html><head><title>Salary Slip</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#333;}
+    .header{background:#3D2200;color:#fff;padding:20px;text-align:center;border-radius:8px 8px 0 0;}
+    .company{font-size:22px;font-weight:bold;letter-spacing:2px;}
+    .sub{font-size:12px;color:#B8955A;margin-top:4px;}
+    .slip-title{background:#B8955A;color:#fff;text-align:center;padding:10px;font-weight:bold;}
+    .info{display:flex;justify-content:space-between;padding:15px;background:#FFF8F3;border:1px solid #ddd;}
+    .section{padding:0 15px 15px;}
+    .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee;font-size:13px;}
+    .earn{color:#196F3D;font-weight:600;}
+    .deduct{color:#922B21;font-weight:600;}
+    .net{background:#3D2200;color:#fff;padding:15px;display:flex;justify-content:space-between;border-radius:0 0 8px 8px;font-size:16px;font-weight:bold;}
+    .label{color:#666;font-size:12px;}
+  </style></head><body>
+  <div class="header">
+    <div class="company">${branch}</div>
+    <div class="sub">Staff Attendance & Payroll System</div>
+  </div>
+  <div class="slip-title">SALARY SLIP — ${monthNames[month].toUpperCase()} ${year}</div>
+  <div class="info">
+    <div><div class="label">Employee Name</div><b>${r.staff.name}</b></div>
+    <div><div class="label">Role</div><b>${r.staff.role||'—'}</b></div>
+    <div><div class="label">Period</div><b>${monthNames[month]} ${year}</b></div>
+  </div>
+  <div class="info" style="margin-top:2px">
+    <div><div class="label">Present Days</div><b>${r.present}</b></div>
+    <div><div class="label">Late IN</div><b>${r.late}</b></div>
+    <div><div class="label">Absent Days</div><b>${r.absent}</b></div>
+    <div><div class="label">Overtime Hrs</div><b>${r.overtimeHrs.toFixed(1)}</b></div>
+  </div>
+  <div class="section" style="margin-top:10px">
+    <div style="font-weight:bold;margin-bottom:8px;color:#3D2200">📈 EARNINGS</div>
+    <div class="row"><span>Basic Salary (Earned)</span><span class="earn">₹${r.earnedBasic.toLocaleString('en-IN')}</span></div>
+    ${r.allowances?`<div class="row"><span>Allowances</span><span class="earn">₹${r.allowances.toLocaleString('en-IN')}</span></div>`:''}
+    ${r.otPay?`<div class="row"><span>Overtime Pay</span><span class="earn">₹${r.otPay.toLocaleString('en-IN')}</span></div>`:''}
+    <div class="row" style="font-weight:bold"><span>Gross Earnings</span><span class="earn">₹${r.gross.toLocaleString('en-IN')}</span></div>
+  </div>
+  <div class="section">
+    <div style="font-weight:bold;margin-bottom:8px;color:#922B21">📉 DEDUCTIONS</div>
+    ${r.lateDeduct?`<div class="row"><span>Late IN Deduction (${r.late}×)</span><span class="deduct">-₹${r.lateDeduct.toLocaleString('en-IN')}</span></div>`:''}
+    ${r.absentDeduct?`<div class="row"><span>Absent Deduction (${r.absent} days)</span><span class="deduct">-₹${r.absentDeduct.toLocaleString('en-IN')}</span></div>`:''}
+    ${!r.totalDeduct?`<div class="row"><span>No Deductions</span><span style="color:#196F3D">✅ Perfect Attendance</span></div>`:''}
+    <div class="row" style="font-weight:bold"><span>Total Deductions</span><span class="deduct">-₹${r.totalDeduct.toLocaleString('en-IN')}</span></div>
+  </div>
+  <div class="net"><span>NET SALARY PAYABLE</span><span>₹${r.net.toLocaleString('en-IN')}</span></div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:10px">Generated on ${new Date().toLocaleDateString('en-IN')} | ${branch}</div>
+  <script>window.onload=()=>window.print();</script>
+  </body></html>`;
+  const w=window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+}
+
+function sendSalaryWA(staffId, month, year){
+  const r=calcMonthSalary(staffId,month,year);
+  if(!r||!r.staff.phone){showToast('Phone number nahi hai');return;}
+  const monthNames=['','January','February','March','April','May','June','July','August','September','October','November','December'];
+  const branch=getCurrentBranchName();
+  const msg=`💰 *${branch} — Salary Slip*\n`+
+    `📅 ${monthNames[month]} ${year}\n\n`+
+    `👤 *${r.staff.name}*\n`+
+    `✅ Present: ${r.present} days\n`+
+    `⏰ Late: ${r.late} | ❌ Absent: ${r.absent}\n\n`+
+    `📈 Gross: ₹${r.gross.toLocaleString('en-IN')}\n`+
+    `📉 Deductions: -₹${r.totalDeduct.toLocaleString('en-IN')}\n`+
+    `💵 *NET SALARY: ₹${r.net.toLocaleString('en-IN')}*\n\n`+
+    `_${branch} Payroll System_`;
+  const url=`https://wa.me/91${r.staff.phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`;
+  window.open(url,'_blank');
+}
+
+function exportPayrollExcel(){
+  const month=parseInt(document.getElementById('payMonth').value);
+  const year=parseInt(document.getElementById('payYear').value);
+  const monthNames=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const staff=getStaff();
+  const results=staff.map(s=>calcMonthSalary(s.id,month,year)).filter(Boolean);
+  let csv='Name,Role,Present,Late,Absent,Leave,OT Hours,Basic Salary,Allowances,OT Pay,Gross,Deductions,Net Salary\n';
+  results.forEach(r=>{
+    csv+=`${r.staff.name},${r.staff.role||''},${r.present},${r.late},${r.absent},${r.leave},${r.overtimeHrs.toFixed(1)},${r.earnedBasic},${r.allowances},${r.otPay},${r.gross},${r.totalDeduct},${r.net}\n`;
+  });
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`Payroll_${monthNames[month]}_${year}.csv`;
+  a.click();
+  showToast('✅ Payroll CSV downloaded!');
+}
+
+// ═══════════════════════════════════════════════════════════
+// MULTI-BRANCH SYSTEM
+// ═══════════════════════════════════════════════════════════
+function getBranches(){return DB.get('branches')||[{id:'B001',name:'Main Branch',location:'Head Office',active:true}];}
+function setBranches(v){DB.set('branches',v);}
+function getCurrentBranchId(){return sessionStorage.getItem('vj_branch')||'B001';}
+function getCurrentBranchName(){
+  const branches=getBranches();
+  const b=branches.find(x=>x.id===getCurrentBranchId());
+  return b?`${b.name}`:'Varnica Jewels';
+}
+
+function switchBranch(branchId){
+  const branches=getBranches();
+  const b=branches.find(x=>x.id===branchId);
+  if(!b)return;
+  if(!confirm(`Switch to "${b.name}"?\nData alag ho jayega!`))return;
+  sessionStorage.setItem('vj_branch',branchId);
+  showToast('✅ Branch switched: '+b.name);
+  renderBranchList();
+  updateBranchHeader();
+  renderTodayLog();updateDashStats();
+}
+
+function addBranch(){
+  const name=document.getElementById('newBranchName').value.trim();
+  const loc=document.getElementById('newBranchLoc').value.trim();
+  if(!name){showToast('Branch name dalo');return;}
+  const branches=getBranches();
+  const newId='B'+Date.now().toString().slice(-4);
+  branches.push({id:newId,name,location:loc,active:false});
+  setBranches(branches);
+  document.getElementById('newBranchName').value='';
+  document.getElementById('newBranchLoc').value='';
+  renderBranchList();
+  showToast('✅ Branch added: '+name);
+}
+
+function deleteBranch(id){
+  if(id==='B001'){showToast('Main Branch delete nahi kar sakte');return;}
+  if(getCurrentBranchId()===id){showToast('Active branch delete nahi kar sakte');return;}
+  if(!confirm('Ye branch delete karein?'))return;
+  setBranches(getBranches().filter(b=>b.id!==id));
+  renderBranchList();
+  showToast('Branch deleted');
+}
+
+function renderBranchList(){
+  const branches=getBranches();
+  const currentId=getCurrentBranchId();
+  const el=document.getElementById('branchList');
+  if(!el)return;
+  el.innerHTML=branches.map(b=>`
+    <div class="branch-card ${b.id===currentId?'branch-active':''}">
+      <div>
+        <div style="font-weight:700;font-size:13px">${b.name}${b.id===currentId?'<span class="branch-tag">Active</span>':''}</div>
+        <div style="font-size:11px;color:var(--text3)">${b.location||'—'} | ${b.id}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        ${b.id!==currentId?`<button class="btn btn-primary" onclick="switchBranch('${b.id}')" style="font-size:11px;padding:6px 10px">Switch</button>`:'<span style="color:var(--green);font-size:11px">✅ Active</span>'}
+        ${b.id!=='B001'?`<button class="btn btn-outline" onclick="deleteBranch('${b.id}')" style="font-size:11px;padding:6px 10px">🗑️</button>`:''}
+      </div>
+    </div>`).join('');
+  const an=document.getElementById('activeBranchName');
+  const at=document.getElementById('activeBranchTag');
+  if(an)an.textContent=getCurrentBranchName();
+  if(at)at.textContent=getCurrentBranchId();
+}
+
+function updateBranchHeader(){
+  const tag=document.getElementById('branchHeaderTag');
+  if(tag)return;
+  const hb=document.querySelector('.header-brand');
+  if(!hb)return;
+  const span=document.createElement('span');
+  span.id='branchHeaderTag';
+  span.className='branch-tag';
+  span.textContent=getCurrentBranchName();
+  span.style.marginTop='2px';
+  hb.appendChild(span);
+}
+
 
 init();
 </script>
