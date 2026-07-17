@@ -11,6 +11,15 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
+// Reliable mobile viewport-height fix (works even without 100dvh support)
+(function(){
+  function setVH(){document.documentElement.style.setProperty('--vh',(window.innerHeight*0.01)+'px');}
+  setVH();
+  window.addEventListener('resize',setVH);
+  window.addEventListener('orientationchange',setVH);
+})();
+</script>
+<script>
 // Load faceapi with fallback CDNs
 (function(){
   const cdns=[
@@ -50,7 +59,7 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .watermark{position:fixed;inset:0;z-index:0;pointer-events:none;display:flex;align-items:center;justify-content:center;}
 .watermark img{width:70%;max-width:400px;opacity:0.045;filter:sepia(1) saturate(0.5);transform:rotate(-15deg);}
 .bg-pattern{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:radial-gradient(circle at 20% 20%,rgba(184,149,90,0.07) 0%,transparent 50%),radial-gradient(circle at 80% 80%,rgba(184,149,90,0.05) 0%,transparent 50%);}
-.app{position:relative;z-index:1;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
+.app{position:relative;z-index:1;height:100vh;height:calc(var(--vh, 1vh) * 100);height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
 
 /* LOADING */
 .loading-screen{position:fixed;inset:0;z-index:9999;background:var(--blush);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;}
