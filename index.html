@@ -268,6 +268,13 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .mini-table td{padding:6px;border-bottom:1px solid var(--blush2);}
 .mini-table .mono{font-family:monospace;font-size:11px;}
 .reason-cell{font-size:10.5px;color:var(--orange);font-style:italic;}
+
+.switch{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;}
+.switch input{opacity:0;width:0;height:0;}
+.switch-slider{position:absolute;cursor:pointer;inset:0;background:var(--blush3);border-radius:26px;transition:.2s;}
+.switch-slider::before{content:"";position:absolute;height:20px;width:20px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,0.2);}
+.switch input:checked+.switch-slider{background:var(--brand-dark);}
+.switch input:checked+.switch-slider::before{transform:translateX(20px);}
 .appr-card{background:var(--blush2);border-radius:var(--radius-sm);padding:14px;margin-bottom:12px;border:1px solid rgba(196,75,53,0.15);}
 .appr-photo{width:100%;border-radius:10px;margin-bottom:10px;transform:scaleX(-1);}
 .appr-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
@@ -479,13 +486,13 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <button class="btn-ic danger" onclick="adminLogout()" style="color:var(--red)">🚪</button>
   </div>
   <div class="admin-tabs">
-    <button class="tab-btn active" onclick="aTab('dash')">📊 Dash</button>
-    <button class="tab-btn" onclick="aTab('staff')">👥 Staff</button>
-    <button class="tab-btn" onclick="aTab('report')">📈 Report</button>
-    <button class="tab-btn" onclick="aTab('appr')">📸 Approvals<span class="badge-count" id="apprBadge" style="display:none">0</span></button>
-    <button class="tab-btn" onclick="aTab('sync')">☁️ Sync</button>
-    <button class="tab-btn" onclick="aTab('settings')">⚙️ Settings</button>
-    <button class="tab-btn" onclick="aTab('manual')">✏️ Manual</button>
+    <button class="tab-btn active" id="atbDash" onclick="aTab('dash')">📊 Dash</button>
+    <button class="tab-btn" id="atbStaff" onclick="aTab('staff')">👥 Staff</button>
+    <button class="tab-btn" id="atbReport" onclick="aTab('report')">📈 Report</button>
+    <button class="tab-btn" id="atbAppr" onclick="aTab('appr')">📸 Approvals<span class="badge-count" id="apprBadge" style="display:none">0</span></button>
+    <button class="tab-btn" id="atbSync" onclick="aTab('sync')">☁️ Sync</button>
+    <button class="tab-btn" id="atbSettings" onclick="aTab('settings')">⚙️ Settings</button>
+    <button class="tab-btn" id="atbManual" onclick="aTab('manual')">✏️ Manual</button>
   </div>
 
 
@@ -620,6 +627,15 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
 
   <!-- SETTINGS -->
   <div class="admin-scroll hidden" id="tabSettings">
+    <div class="card" style="border:1.5px solid var(--brand)">
+      <div class="sec-title">🔒 Kiosk Mode</div>
+      <div style="font-size:11.5px;color:var(--text2);margin-bottom:10px">Isse ON karne par is device par sirf <b>Staff</b> tab aur Punch screen milegi — Dashboard, Report, Approvals, Sync aur baaki Settings hide ho jayenge. Sab settings sirf PC se hi manage hongi. Har device ka apna alag setting hai (sync nahi hota).</div>
+      <div class="set-row">
+        <div><div class="set-lbl">Is device ko Kiosk banao</div><div class="set-sub">iPad/tablet ke liye — PC par OFF hi rakhna</div></div>
+        <label class="switch"><input type="checkbox" id="kioskToggle" onchange="toggleKioskMode()"><span class="switch-slider"></span></label>
+      </div>
+    </div>
+    <div id="settingsFullOnly">
     <div class="card">
       <div class="sec-title">⏰ Timing Rules</div>
       <div class="set-row"><div><div class="set-lbl">Late Grace Period</div><div class="set-sub">Minutes after shift start = Present</div></div><div class="set-val" onclick="editSetting('grace')" id="graceVal">10 min</div></div>
@@ -664,6 +680,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div class="sec-title">📤 Export</div>
       <button class="btn btn-outline" onclick="exportAllCSV()">📊 Export Attendance CSV</button>
       <button class="btn btn-secondary" onclick="exportStaffCSV()" style="margin-top:8px">👥 Export Staff CSV</button>
+    </div>
     </div>
   </div>
   <div class="dev-tag">Developer — Vimal Gehlot</div>
@@ -837,6 +854,48 @@ async function restoreFromCloud(){
     setTimeout(()=>location.reload(),1200);
   }catch(e){showToast('❌ Restore failed: '+e.message);}
 }
+async function pullCloudData(){
+  try{
+    const res=await fetch('/api/restore?bucket='+TOOL_ID);
+    const json=await res.json();
+    if(!json.ok||!json.data)return;
+    const d=json.data;
+    // Staff & Settings: VPS is the shared source of truth across all devices
+    if(d.staff)localStorage.setItem('vj_staff',JSON.stringify(d.staff));
+    if(d.settings)localStorage.setItem('vj_settings',JSON.stringify(d.settings));
+    // Attendance: merge (don't lose today's not-yet-synced local punches if cloud is slightly behind)
+    if(d.att){
+      const localAtt=getAtt();
+      const merged=[...d.att];
+      localAtt.forEach(la=>{
+        const idx=merged.findIndex(ca=>ca.staffId===la.staffId&&ca.date===la.date);
+        if(idx===-1)merged.push(la);
+        else{
+          const ca=merged[idx];
+          const laScore=(la.outTime?2:0)+(la.inTime?1:0);
+          const caScore=(ca.outTime?2:0)+(ca.inTime?1:0);
+          if(laScore>caScore)merged[idx]=la;
+        }
+      });
+      localStorage.setItem('vj_att',JSON.stringify(merged));
+    }
+  }catch(e){ /* offline or backend unreachable — silently continue with whatever is local */ }
+}
+function isKioskMode(){return DB.get('kioskMode')===true;}
+function toggleKioskMode(){
+  const on=document.getElementById('kioskToggle').checked;
+  DB.set('kioskMode',on);
+  applyKioskMode();
+  showToast(on?'🔒 Kiosk Mode ON — sirf Staff + Punch milega':'🔓 Kiosk Mode OFF — full access');
+  if(on)aTab('staff');
+}
+function applyKioskMode(){
+  const kiosk=isKioskMode();
+  ['atbDash','atbReport','atbAppr','atbSync','atbManual'].forEach(id=>{
+    const b=document.getElementById(id);if(b)b.style.display=kiosk?'none':'';
+  });
+  const fo=document.getElementById('settingsFullOnly');if(fo)fo.style.display=kiosk?'none':'';
+}
 const getStaff=()=>DB.get('staff')||[];
 const setStaff=v=>DB.set('staff',v);
 const getAtt=()=>DB.get('att')||[];
@@ -936,6 +995,12 @@ async function init(){
   
   const licensed=await checkLicense();
   if(!licensed) return;
+  
+  document.getElementById('loadingMsg').textContent='Syncing latest data...';
+  document.getElementById('loadingBar').style.width='22%';
+  
+  await pullCloudData();
+  applyKioskMode();
   
   document.getElementById('loadingMsg').textContent='Loading AI models...';
   document.getElementById('loadingBar').style.width='30%';
@@ -1424,6 +1489,7 @@ function updateApprBadge(){const c=getPending().filter(p=>p.status==='pending').
 // ══════════════════════════════════════════════
 function loadSettingsUI(){
   const s=getSettings();
+  document.getElementById('kioskToggle').checked=isKioskMode();
   document.getElementById('graceVal').textContent=s.grace+' min';
   document.getElementById('halfDayVal').textContent=s.halfDay+' hrs';
   document.getElementById('earlyOutVal').textContent=s.earlyOut+' min';
