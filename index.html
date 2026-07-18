@@ -212,7 +212,10 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 @keyframes tIn{from{opacity:0;top:60px;}to{opacity:1;top:80px;}}
 .popup-ov{display:none;position:fixed;inset:0;z-index:2000;background:rgba(26,16,8,0.7);backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:20px;}
 .popup-ov.active{display:flex;}
-.popup-box{width:100%;max-width:380px;background:var(--surface);border-radius:24px;padding:32px 24px;text-align:center;box-shadow:var(--shadow-lg);animation:popIn 0.35s cubic-bezier(0.34,1.56,0.64,1);}
+.popup-box{width:100%;max-width:380px;background:var(--surface);border-radius:24px;padding:32px 24px;text-align:center;box-shadow:var(--shadow-lg);animation:popIn 0.35s cubic-bezier(0.34,1.56,0.64,1);position:relative;overflow:hidden;}
+.popup-face-wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:0;}
+.popup-face-wm img{width:230px;height:230px;object-fit:cover;border-radius:50%;opacity:0.13;filter:sepia(0.5) saturate(0.7);}
+.popup-box>*:not(.popup-face-wm){position:relative;z-index:1;}
 @keyframes popIn{from{transform:scale(0.8);opacity:0;}to{transform:scale(1);opacity:1;}}
 .popup-icon{font-size:52px;margin-bottom:12px;}
 .popup-title{font-family:"Cormorant Garamond",serif;font-size:24px;font-weight:700;color:var(--brand-deep);margin-bottom:6px;}
@@ -432,6 +435,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="btn btn-secondary" style="margin-top:20px" onclick="showPage('punchPage')">← Back</button>
     </div>
   </div>
+  <div class="dev-tag">Developer — Vimal Gehlot</div>
 </div>
 
 <!-- ADMIN PANEL -->
@@ -518,7 +522,8 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       </div>
       <div class="ig"><label class="il">Staff Filter</label><select class="if" id="rptStaff"><option value="">All Staff</option></select></div>
       <button class="btn btn-primary" onclick="generateReport()">📊 Generate Report</button>
-      <button class="btn btn-outline" onclick="exportReportCSV()" style="margin-top:6px">⬇️ Export CSV</button>
+      <button class="btn btn-outline" onclick="exportReportCSV()" style="margin-top:6px">⬇️ Export Attendance CSV</button>
+      <button class="btn btn-outline" onclick="exportPayrollCSV()" style="margin-top:6px">💰 Export Payroll CSV</button>
       <button class="btn btn-green" onclick="exportToGSheets()" style="margin-top:6px">📤 Send to Google Sheets</button>
     </div>
     <div id="reportHighlights"></div>
@@ -589,6 +594,19 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       </div>
     </div>
     <div class="card">
+      <div class="sec-title">☁️ Cloud Backup <span id="cloudBackupDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text3);margin-left:4px"></span></div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Har save (Staff/Attendance/Settings) automatically VPS ke apne server par bhi backup ho jata hai — Google Sheets se alag, poori tarah aapke control mein. Dot green = last backup successful.</div>
+      <button class="btn btn-outline" onclick="restoreFromCloud()">📥 Restore from Cloud</button>
+      <div style="font-size:10.5px;color:var(--text3);margin-top:6px">Naya tablet setup karte waqt use karo — poora data automatically wapas aa jayega.</div>
+    </div>
+    <div class="card">
+      <div class="sec-title">💰 Payroll — PF / ESI Rules</div>
+      <div class="set-row"><div><div class="set-lbl">PF Rate</div><div class="set-sub">Employee share % (applies if staff's PF = Yes)</div></div><div class="set-val" onclick="editSetting('pfRate')" id="pfRateVal">12%</div></div>
+      <div class="set-row"><div><div class="set-lbl">ESI Rate</div><div class="set-sub">Employee share % (applies if staff's ESI = Yes)</div></div><div class="set-val" onclick="editSetting('esiRate')" id="esiRateVal">0.75%</div></div>
+      <div class="set-row"><div><div class="set-lbl">ESI Wage Ceiling</div><div class="set-sub">₹/month — ESI applies only below this</div></div><div class="set-val" onclick="editSetting('esiCeiling')" id="esiCeilingVal">₹21,000</div></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">Har staff ke liye PF/ESI "Yes/No" unke Staff form mein set hota hai. Ye rates sirf un par lagte hain jinka PF/ESI "Yes" hai.</div>
+    </div>
+    <div class="card">
       <div class="sec-title">🔐 Change Admin PIN</div>
       <div class="ig"><label class="il">New PIN (4 digits)</label><input type="password" class="if" id="newPin" maxlength="4" placeholder="New PIN"></div>
       <div class="ig"><label class="il">Confirm PIN</label><input type="password" class="if" id="confPin" maxlength="4" placeholder="Confirm"></div>
@@ -615,6 +633,11 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div class="ig"><label class="il">Shift Start *</label><input type="time" class="if" id="sIn" value="09:00"></div>
       <div class="ig"><label class="il">Shift End *</label><input type="time" class="if" id="sOut" value="18:00"></div>
     </div>
+    <div class="irow">
+      <div class="ig"><label class="il">Monthly Salary (₹)</label><input type="number" class="if" id="sSalary" placeholder="e.g. 15000" min="0"></div>
+      <div class="ig"><label class="il">PF Applicable?</label><select class="if" id="sPF"><option value="1">Yes</option><option value="0">No</option></select></div>
+    </div>
+    <div class="ig"><label class="il">ESI Applicable?</label><select class="if" id="sESI"><option value="1">Yes</option><option value="0">No</option></select></div>
     <label class="il">Face Registration (3-5 photos)</label>
     <div class="reg-cam-wrap"><video id="regVideo" autoplay muted playsinline></video><div class="reg-guide-ov"><div class="reg-guide"></div></div></div>
     <div class="photo-thumbs" id="photoThumbs"></div>
@@ -650,6 +673,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
 <!-- POPUPS -->
 <div class="popup-ov" id="welcomePopup">
   <div class="popup-box">
+    <div class="popup-face-wm" id="wFaceWmWrap"><img id="wFacePhoto" src="" alt=""></div>
     <div class="popup-icon" id="wIcon">🙏</div>
     <div class="popup-title" id="wName">Welcome!</div>
     <div class="popup-time" id="wTime"></div>
@@ -696,6 +720,17 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   </div>
 </div>
 
+<div class="popup-ov" id="outConfirmPopup">
+  <div class="popup-box">
+    <div class="popup-icon">🚪</div>
+    <div class="popup-title">Confirm OUT Punch</div>
+    <div class="popup-sub"><span id="ocName" style="font-weight:700"></span><br>IN was at <span id="ocIn"></span></div>
+    <div class="popup-warning">Galti se dobara scan hua ho to Cancel dabao — warna OUT punch ho jayega.</div>
+    <button class="btn btn-primary" style="margin-top:12px" onclick="confirmOutPunch()">✅ Yes, Punch OUT (<span id="ocTime"></span>)</button>
+    <button class="btn btn-secondary" style="margin-top:8px" onclick="cancelOutPunch()">✕ Cancel, Still IN</button>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════════
 // CONFIG — MASTER LICENSE CHECK
@@ -721,15 +756,44 @@ function embedImages(){
 // ══════════════════════════════════════════════
 // DATA LAYER
 // ══════════════════════════════════════════════
+const CLOUD_SYNC_KEYS=['staff','att','settings'];
 const DB={
   get:k=>{try{return JSON.parse(localStorage.getItem('vj_'+k));}catch{return null;}},
-  set:(k,v)=>localStorage.setItem('vj_'+k,JSON.stringify(v))
+  set:(k,v)=>{
+    localStorage.setItem('vj_'+k,JSON.stringify(v));
+    if(CLOUD_SYNC_KEYS.includes(k))cloudBackupSync(k,v);
+  }
 };
+let cloudBackupTimer=null;
+function cloudBackupSync(key,value){
+  // debounce so rapid successive saves don't fire a flood of requests
+  clearTimeout(cloudBackupTimer);
+  cloudBackupTimer=setTimeout(()=>{
+    fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,key,value})})
+      .then(r=>{document.getElementById('cloudBackupDot')&&(document.getElementById('cloudBackupDot').style.background=r.ok?'var(--green)':'var(--red)');})
+      .catch(()=>{document.getElementById('cloudBackupDot')&&(document.getElementById('cloudBackupDot').style.background='var(--red)');});
+  },800);
+}
+async function restoreFromCloud(){
+  if(!confirm('Ye VPS ke cloud backup se poora data (Staff + Attendance + Settings) laayega aur is device ka current data replace karega.\n\nAage badhein?'))return;
+  try{
+    showToast('Restoring from cloud...');
+    const res=await fetch('/api/restore?bucket='+TOOL_ID);
+    const json=await res.json();
+    if(!json.ok)throw new Error(json.error||'Restore failed');
+    const d=json.data||{};
+    if(d.staff)localStorage.setItem('vj_staff',JSON.stringify(d.staff));
+    if(d.att)localStorage.setItem('vj_att',JSON.stringify(d.att));
+    if(d.settings)localStorage.setItem('vj_settings',JSON.stringify(d.settings));
+    showToast('✅ Restored! Reloading...');
+    setTimeout(()=>location.reload(),1200);
+  }catch(e){showToast('❌ Restore failed: '+e.message);}
+}
 const getStaff=()=>DB.get('staff')||[];
 const setStaff=v=>DB.set('staff',v);
 const getAtt=()=>DB.get('att')||[];
 const setAtt=v=>DB.set('att',v);
-const getSettings=()=>DB.get('settings')||{grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234'};
+const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000},DB.get('settings')||{});
 const setSettings=v=>DB.set('settings',v);
 const getPending=()=>DB.get('pending')||[];
 const setPending=v=>DB.set('pending',v);
@@ -743,7 +807,7 @@ const setSyncMeta=v=>DB.set('syncMeta',v);
 // ══════════════════════════════════════════════
 let faceLoaded=false,faceMatcher=null,mainStream=null,regStream=null;
 let regPhotos=[],cooldown=false,curPin='',editingKey='';
-let pendingPunchData=null,pendingAbsentId=null,syncInProgress=false;
+let pendingPunchData=null,pendingAbsentId=null,pendingOutData=null,syncInProgress=false;
 let deferredInstallPrompt=null;
 let lastReportData=[];
 
@@ -1087,33 +1151,67 @@ function doPunch(staff){
   const now=new Date(),todayKey=toKey(now),timeStr=now.toLocaleTimeString('en-IN',{hour12:false});
   const settings=getSettings(),att=getAtt();
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
-  let punchType,status,warningType=null;
   if(!rec||!rec.inTime){
-    punchType='IN';
+    let status,warningType=null;
     const diffMin=timeDiffMin(staff.shiftIn||'09:00',timeStr);
     if(diffMin<=0||diffMin<=settings.grace)status='Present';
     else{status='Late';warningType='late';}
     if(rec){rec.inTime=timeStr;rec.status=status;rec.method='face';}
     else att.push({staffId:staff.id,staffName:staff.name,date:todayKey,inTime:timeStr,outTime:null,status,method:'face',hours:0,reason:'',absentReason:''});
+    setAtt(att);
+    const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
+    if(warningType){pendingPunchData={staff,punchType:'IN',timeStr,warningType};showWarningPopup(staff,'IN',timeStr,warningType);}
+    else{syncRecord(latest);showWelcomePopup(staff,'IN',timeStr,latest);renderTodayLog();updateDashStats();}
   }else{
-    punchType='OUT';
-    const hrs=timeDiffHours(rec.inTime,timeStr);
-    const shiftEnd=staff.shiftOut||'18:00';
-    const earlyMin=timeDiffMin(timeStr,shiftEnd);
-    rec.outTime=timeStr;rec.hours=hrs;
-    if(hrs<settings.halfDay)rec.status='Half Day';
-    else if(earlyMin>settings.earlyOut)warningType='early';
-    else if(timeDiffMin(shiftEnd,timeStr)>30)rec.status='Overtime';
+    pendingOutData={staff,timeStr,todayKey};
+    showOutConfirmPopup(staff,rec.inTime,timeStr);
   }
+}
+
+function showOutConfirmPopup(staff,inTime,timeStr){
+  document.getElementById('ocName').textContent=staff.name;
+  document.getElementById('ocIn').textContent=inTime;
+  document.getElementById('ocTime').textContent=timeStr;
+  openPopup('outConfirmPopup');
+}
+
+function cancelOutPunch(){
+  pendingOutData=null;
+  closePopup('outConfirmPopup');
+  showToast('OUT cancelled — still Punched IN');
+  resetStatusCard();
+}
+
+function confirmOutPunch(){
+  if(!pendingOutData)return;
+  const{staff,timeStr,todayKey}=pendingOutData;
+  closePopup('outConfirmPopup');
+  const settings=getSettings(),att=getAtt();
+  const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
+  pendingOutData=null;
+  if(!rec)return;
+  let warningType=null;
+  const hrs=timeDiffHours(rec.inTime,timeStr);
+  const shiftEnd=staff.shiftOut||'18:00';
+  const earlyMin=timeDiffMin(timeStr,shiftEnd);
+  rec.outTime=timeStr;rec.hours=hrs;
+  if(hrs<settings.halfDay)rec.status='Half Day';
+  else if(earlyMin>settings.earlyOut)warningType='early';
+  else if(timeDiffMin(shiftEnd,timeStr)>30)rec.status='Overtime';
   setAtt(att);
   const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
-  if(warningType){pendingPunchData={staff,punchType,timeStr,warningType};showWarningPopup(staff,punchType,timeStr,warningType);}
-  else{syncRecord(latest);showWelcomePopup(staff,punchType,timeStr,latest);renderTodayLog();updateDashStats();}
+  if(warningType){pendingPunchData={staff,punchType:'OUT',timeStr,warningType};showWarningPopup(staff,'OUT',timeStr,warningType);}
+  else{syncRecord(latest);showWelcomePopup(staff,'OUT',timeStr,latest);renderTodayLog();updateDashStats();}
 }
 
 function syncRecord(rec){if(!rec)return;const m=getSyncMeta();if(m.url)addToQueue({action:'punch',...rec});}
 
 function showWelcomePopup(staff,type,time,rec){
+  // Face watermark only appears when it's this staff's birthday (see isBirthdayToday()) —
+  // wired up properly once the Date of Birth field is added to Staff records.
+  const wm=document.getElementById('wFaceWmWrap'),wmImg=document.getElementById('wFacePhoto');
+  const isBday=(typeof isBirthdayToday==='function')&&isBirthdayToday(staff);
+  if(isBday&&staff.photo){wmImg.src=staff.photo;wm.style.display='flex';}else{wm.style.display='none';}
   document.getElementById('wIcon').textContent=type==='IN'?'🙏':'👋';
   document.getElementById('wName').textContent=(type==='IN'?'Welcome, ':'Goodbye, ')+staff.name+'!';
   document.getElementById('wTime').textContent=time;
@@ -1191,11 +1289,12 @@ function renderStaffList(){
   const staff=getStaff();document.getElementById('staffCount').textContent=staff.length;
   const el=document.getElementById('staffList');
   if(!staff.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">👥</div><p>No staff added yet</p></div>';return;}
-  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions"><button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
+  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions"><button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
 }
 function openAddStaff(){
   document.getElementById('editStaffId').value='';document.getElementById('sName').value='';document.getElementById('sRole').value='';
   document.getElementById('sIn').value='09:00';document.getElementById('sOut').value='18:00';
+  document.getElementById('sSalary').value='';document.getElementById('sPF').value='1';document.getElementById('sESI').value='1';
   document.getElementById('staffModalTitle').textContent='➕ Add Staff';
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
   openModal('staffModal');startRegCam();
@@ -1204,6 +1303,7 @@ function reRegFace(id){
   const s=getStaff().find(x=>x.id===id);if(!s)return;
   document.getElementById('editStaffId').value=id;document.getElementById('sName').value=s.name;document.getElementById('sRole').value=s.role||'';
   document.getElementById('sIn').value=s.shiftIn;document.getElementById('sOut').value=s.shiftOut;
+  document.getElementById('sSalary').value=s.salary||'';document.getElementById('sPF').value=s.pf===0?'0':'1';document.getElementById('sESI').value=s.esi===0?'0':'1';
   document.getElementById('staffModalTitle').textContent='📷 Re-register — '+s.name;
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
   openModal('staffModal');startRegCam();
@@ -1222,12 +1322,15 @@ async function capturePhoto(){
 async function saveStaff(){
   const name=document.getElementById('sName').value.trim(),role=document.getElementById('sRole').value.trim();
   const shiftIn=document.getElementById('sIn').value,shiftOut=document.getElementById('sOut').value;
+  const salary=parseFloat(document.getElementById('sSalary').value)||0;
+  const pf=parseInt(document.getElementById('sPF').value);
+  const esi=parseInt(document.getElementById('sESI').value);
   const eid=document.getElementById('editStaffId').value;
   if(!name){showToast('Enter staff name');return;}
   if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
   if(!regPhotos.length&&eid){
     const staff=getStaff(),s=staff.find(x=>x.id===eid);
-    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;}
+    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.pf=pf;s.esi=esi;}
     setStaff(staff);closeModal('staffModal');stopRegCam();renderStaffList();showToast('Updated!');return;
   }
   showToast('Processing face data...');
@@ -1240,8 +1343,8 @@ async function saveStaff(){
     }
     if(!descs.length){showToast('No face detected. Better lighting needed.');return;}
     const staff=getStaff();
-    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.descriptors=descs;s.photo=regPhotos[0];}}
-    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,descriptors:descs,photo:regPhotos[0],addedOn:new Date().toISOString()});
+    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.pf=pf;s.esi=esi;s.descriptors=descs;s.photo=regPhotos[0];}}
+    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,pf,esi,descriptors:descs,photo:regPhotos[0],addedOn:new Date().toISOString()});
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
     showToast('✅ '+name+' saved with '+descs.length+' face samples!');
   }catch(e){showToast('Error: '+e.message);}
@@ -1275,11 +1378,14 @@ function loadSettingsUI(){
   document.getElementById('halfDayVal').textContent=s.halfDay+' hrs';
   document.getElementById('earlyOutVal').textContent=s.earlyOut+' min';
   document.getElementById('weekOffSel').value=s.weekOff||0;
+  document.getElementById('pfRateVal').textContent=s.pfRate+'%';
+  document.getElementById('esiRateVal').textContent=s.esiRate+'%';
+  document.getElementById('esiCeilingVal').textContent='₹'+Number(s.esiCeiling).toLocaleString('en-IN');
   renderHolidays();
 }
 function saveSetting(){const s=getSettings();s.weekOff=parseInt(document.getElementById('weekOffSel').value);setSettings(s);showToast('Updated');}
-function editSetting(key){editingKey=key;const s=getSettings();const labels={grace:'Grace Period (min)',halfDay:'Half Day Threshold (hrs)',earlyOut:'Early Out Threshold (min)'};document.getElementById('settingLbl').textContent=labels[key];document.getElementById('settingInput').value=s[key];openModal('settingModal');}
-function saveSettingVal(){const v=parseInt(document.getElementById('settingInput').value);if(!v||v<1){showToast('Invalid');return;}const s=getSettings();s[editingKey]=v;setSettings(s);loadSettingsUI();closeModal('settingModal');showToast('Updated!');}
+function editSetting(key){editingKey=key;const s=getSettings();const labels={grace:'Grace Period (min)',halfDay:'Half Day Threshold (hrs)',earlyOut:'Early Out Threshold (min)',pfRate:'PF Rate (%)',esiRate:'ESI Rate (%)',esiCeiling:'ESI Wage Ceiling (₹)'};document.getElementById('settingLbl').textContent=labels[key];document.getElementById('settingInput').value=s[key];openModal('settingModal');}
+function saveSettingVal(){const v=parseFloat(document.getElementById('settingInput').value);if(isNaN(v)||v<0){showToast('Invalid');return;}const s=getSettings();s[editingKey]=v;setSettings(s);loadSettingsUI();closeModal('settingModal');showToast('Updated!');}
 function addHoliday(){const d=document.getElementById('holDate').value,n=document.getElementById('holName').value.trim();if(!d||!n){showToast('Enter date and name');return;}const s=getSettings();if(!s.holidays)s.holidays=[];s.holidays.push({date:d,name:n});setSettings(s);document.getElementById('holDate').value='';document.getElementById('holName').value='';renderHolidays();showToast('Holiday added');}
 function renderHolidays(){const s=getSettings(),el=document.getElementById('holList');if(!s.holidays||!s.holidays.length){el.innerHTML='<div style="font-size:12px;color:var(--text3)">No holidays</div>';return;}el.innerHTML=s.holidays.map((h,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--blush2)"><span style="font-size:11px;color:var(--brand-dark);font-family:monospace">${h.date}</span><span style="flex:1;font-size:13px">${h.name}</span><button class="btn-ic danger" onclick="removeHoliday(${i})" style="width:26px;height:26px;font-size:12px">✕</button></div>`).join('');}
 function removeHoliday(i){const s=getSettings();s.holidays.splice(i,1);setSettings(s);renderHolidays();showToast('Removed');}
@@ -1309,7 +1415,15 @@ function generateReport(){
       if(!rec||!rec.inTime){absent++;rows.push({date:d,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||''});}
       else{if(rec.status==='Late')late++;if(rec.status==='Half Day')halfDay++;if(rec.status==='Overtime')overtime++;if(rec.status==='Early Out')earlyOut++;if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;rows.push({date:d,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||''});}
     });
-    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,pct:workDays>0?Math.round(present/workDays*100):0,rows});
+    const settings=getSettings();
+    const payableDays=present+halfDay*0.5;
+    const perDaySalary=(s.salary&&workDays>0)?s.salary/workDays:0;
+    const grossEarned=perDaySalary*payableDays;
+    const pfOn=s.pf!==0;const esiOn=s.esi!==0&&s.salary&&s.salary<=settings.esiCeiling;
+    const pfAmount=pfOn?Math.round(grossEarned*settings.pfRate/100):0;
+    const esiAmount=esiOn?Math.round(grossEarned*settings.esiRate/100):0;
+    const netPay=Math.round(grossEarned-pfAmount-esiAmount);
+    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,perDaySalary,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay});
   });
   lastReportData=summaries;renderHighlights(summaries);renderReportTable(summaries);
 }
@@ -1321,7 +1435,13 @@ function renderHighlights(summaries){
 }
 function renderReportTable(summaries){
   const el=document.getElementById('reportTable');if(!summaries.length){el.innerHTML='<div class="empty-state"><p>No data</p></div>';return;}
-  el.innerHTML=summaries.map(s=>`<div style="margin-bottom:20px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:10px;background:var(--blush2);border-radius:10px;flex-wrap:wrap"><div style="flex:1;min-width:120px"><div style="font-weight:700;font-size:14px">${s.staff.name}</div><div style="font-size:11px;color:var(--text3)">${s.staff.role||''} • ${s.pct}% Attendance</div></div><div style="display:flex;gap:4px;flex-wrap:wrap">${['✅ '+s.present,'❌ '+s.absent+' Abs',s.late?'⏰ '+s.late+' Late':'',s.earlyOut?'🌅 '+s.earlyOut+' Early':'',s.overtime?'🔵 '+s.overtime+' OT':'',s.halfDay?'🔶 '+s.halfDay+' HD':''].filter(Boolean).map(t=>'<span class="htag" style="background:var(--blush3);color:var(--text)">'+t+'</span>').join('')}</div></div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--blush2)"><th style="padding:6px;text-align:left;color:var(--text3)">Date</th><th style="padding:6px;text-align:left;color:var(--text3)">Status</th><th style="padding:6px;text-align:left;color:var(--text3)">IN</th><th style="padding:6px;text-align:left;color:var(--text3)">OUT</th><th style="padding:6px;text-align:left;color:var(--text3)">Hrs</th><th style="padding:6px;text-align:left;color:var(--text3)">Reason</th></tr></thead><tbody>${s.rows.map(r=>{const bg=r.status==='Absent'?'rgba(196,75,53,0.06)':r.status==='Late'?'rgba(196,122,32,0.06)':'';const sc=r.status==='Absent'?'var(--red)':r.status==='Late'?'var(--orange)':r.status==='Present'||r.status==='Overtime'?'var(--green)':'var(--text2)';return '<tr style="background:'+bg+';border-bottom:1px solid var(--blush2)"><td style="padding:6px;font-family:monospace;font-size:11px">'+r.date+'</td><td style="padding:6px;font-weight:600;color:'+sc+'">'+r.status+'</td><td style="padding:6px;font-family:monospace">'+r.inTime+'</td><td style="padding:6px;font-family:monospace">'+r.outTime+'</td><td style="padding:6px">'+r.hours+'</td><td style="padding:6px;font-size:11px;color:var(--orange);font-style:italic">'+r.reason+'</td></tr>';}).join('')}</tbody></table></div></div>`).join('');
+  el.innerHTML=summaries.map(s=>`<div style="margin-bottom:20px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:10px;background:var(--blush2);border-radius:10px;flex-wrap:wrap"><div style="flex:1;min-width:120px"><div style="font-weight:700;font-size:14px">${s.staff.name}</div><div style="font-size:11px;color:var(--text3)">${s.staff.role||''} • ${s.pct}% Attendance</div></div><div style="display:flex;gap:4px;flex-wrap:wrap">${['✅ '+s.present,'❌ '+s.absent+' Abs',s.late?'⏰ '+s.late+' Late':'',s.earlyOut?'🌅 '+s.earlyOut+' Early':'',s.overtime?'🔵 '+s.overtime+' OT':'',s.halfDay?'🔶 '+s.halfDay+' HD':''].filter(Boolean).map(t=>'<span class="htag" style="background:var(--blush3);color:var(--text)">'+t+'</span>').join('')}</div></div>${s.staff.salary?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;padding:10px;background:rgba(76,140,74,0.06);border-radius:10px;border:1px solid rgba(76,140,74,0.15)"><span class="htag" style="background:var(--surface)">📅 Payable ${s.payableDays} / ${s.workDays} days</span><span class="htag" style="background:var(--surface)">₹ Gross ₹${s.grossEarned.toLocaleString('en-IN')}</span>${s.pfOn?'<span class="htag" style="background:var(--surface)">PF −₹'+s.pfAmount.toLocaleString('en-IN')+'</span>':''}${s.esiOn?'<span class="htag" style="background:var(--surface)">ESI −₹'+s.esiAmount.toLocaleString('en-IN')+'</span>':''}<span class="htag" style="background:var(--green);color:#fff;font-weight:700">💰 Net ₹${s.netPay.toLocaleString('en-IN')}</span></div>`:''}<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--blush2)"><th style="padding:6px;text-align:left;color:var(--text3)">Date</th><th style="padding:6px;text-align:left;color:var(--text3)">Status</th><th style="padding:6px;text-align:left;color:var(--text3)">IN</th><th style="padding:6px;text-align:left;color:var(--text3)">OUT</th><th style="padding:6px;text-align:left;color:var(--text3)">Hrs</th><th style="padding:6px;text-align:left;color:var(--text3)">Reason</th></tr></thead><tbody>${s.rows.map(r=>{const bg=r.status==='Absent'?'rgba(196,75,53,0.06)':r.status==='Late'?'rgba(196,122,32,0.06)':'';const sc=r.status==='Absent'?'var(--red)':r.status==='Late'?'var(--orange)':r.status==='Present'||r.status==='Overtime'?'var(--green)':'var(--text2)';return '<tr style="background:'+bg+';border-bottom:1px solid var(--blush2)"><td style="padding:6px;font-family:monospace;font-size:11px">'+r.date+'</td><td style="padding:6px;font-weight:600;color:'+sc+'">'+r.status+'</td><td style="padding:6px;font-family:monospace">'+r.inTime+'</td><td style="padding:6px;font-family:monospace">'+r.outTime+'</td><td style="padding:6px">'+r.hours+'</td><td style="padding:6px;font-size:11px;color:var(--orange);font-style:italic">'+r.reason+'</td></tr>';}).join('')}</tbody></table></div></div>`).join('');
+}
+function exportPayrollCSV(){
+  if(!lastReportData||!lastReportData.length){showToast('Pehle report generate karo');return;}
+  const rows=[['Name','Role','Working Days','Present','Half Day','Absent','Payable Days','Per Day Salary','Gross Earned','PF Deduction','ESI Deduction','Net Pay']];
+  lastReportData.forEach(s=>{rows.push([s.staff.name,s.staff.role||'',s.workDays,s.present,s.halfDay,s.absent,s.payableDays,s.perDaySalary?s.perDaySalary.toFixed(2):0,s.grossEarned,s.pfAmount,s.esiAmount,s.netPay]);});
+  dlCSV(rows,'varnica_payroll.csv');
 }
 function exportReportCSV(){if(!lastReportData.length){showToast('Generate report first');return;}const rows=[['Staff','Role','Date','Status','IN','OUT','Hours','Reason']];lastReportData.forEach(s=>{s.rows.forEach(r=>{rows.push([s.staff.name,s.staff.role||'',r.date,r.status,r.inTime,r.outTime,r.hours,r.reason]);});});dlCSV(rows,'varnica_report.csv');}
 
