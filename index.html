@@ -20,6 +20,26 @@
 })();
 </script>
 <script>
+// Load jsPDF with fallback CDNs (for Payslip PDF generation)
+(function(){
+  const cdns=[
+    'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js',
+    'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+  ];
+  let i=0;
+  function tryLoad(){
+    if(i>=cdns.length){console.error('All jsPDF CDNs failed');return;}
+    const s=document.createElement('script');
+    s.src=cdns[i];
+    s.onload=()=>console.log('jsPDF loaded from',cdns[i]);
+    s.onerror=()=>{i++;tryLoad();};
+    document.head.appendChild(s);
+  }
+  tryLoad();
+})();
+</script>
+<script>
 // Load faceapi with fallback CDNs
 (function(){
   const cdns=[
@@ -268,6 +288,13 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .mini-table td{padding:6px;border-bottom:1px solid var(--blush2);}
 .mini-table .mono{font-family:monospace;font-size:11px;}
 .reason-cell{font-size:10.5px;color:var(--orange);font-style:italic;}
+.trend-up{font-size:10px;font-weight:700;color:var(--green);display:inline-block;margin-top:2px;}
+.trend-down{font-size:10px;font-weight:700;color:var(--red);display:inline-block;margin-top:2px;}
+.trend-flat{font-size:10px;font-weight:600;color:var(--text3);display:inline-block;margin-top:2px;}
+.row-actions{display:flex;gap:6px;margin:8px 0;}
+.row-action-btn{flex:1;padding:8px;border-radius:10px;border:1px solid var(--blush3);background:var(--blush);font-size:11px;font-weight:600;color:var(--text2);cursor:pointer;}
+.staff-search-sticky{position:sticky;top:-16px;z-index:20;background:var(--surface);border-radius:14px;padding:4px 10px;box-shadow:0 4px 16px rgba(184,149,90,0.12);border:1px solid var(--blush3);margin:-2px -2px 10px;}
+.staff-search-sticky input{width:100%;border:none;background:transparent;font-size:13px;padding:8px 4px;color:var(--text);outline:none;font-family:inherit;}
 
 .switch{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;}
 .switch input{opacity:0;width:0;height:0;}
@@ -550,6 +577,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
 
   <!-- STAFF -->
   <div class="admin-scroll hidden" id="tabStaff">
+    <div class="staff-search-sticky"><input type="text" id="staffSearch" placeholder="🔍 Search staff by name..." oninput="renderStaffList()"></div>
     <button class="btn btn-primary" onclick="openAddStaff()">+ Add New Staff Member</button>
     <div class="card"><div class="sec-title">👥 Staff List (<span id="staffCount">0</span>)</div><div id="staffList"></div></div>
   </div>
@@ -570,6 +598,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="btn btn-primary" onclick="generateReport()">📊 Generate Report</button>
       <button class="btn btn-outline" onclick="exportReportCSV()" style="margin-top:6px">⬇️ Export Attendance CSV</button>
       <button class="btn btn-outline" onclick="exportPayrollCSV()" style="margin-top:6px">💰 Export Payroll CSV</button>
+      <button class="btn btn-outline" onclick="downloadFullPayrollPDF()" style="margin-top:6px">🖨️ Full Payroll PDF (All Staff)</button>
       <button class="btn btn-green" onclick="exportToGSheets()" style="margin-top:6px">📤 Send to Google Sheets</button>
     </div>
     <div class="report-toggle">
@@ -1401,9 +1430,14 @@ async function captureFail(){
 // STAFF
 // ══════════════════════════════════════════════
 function renderStaffList(){
-  const staff=getStaff();document.getElementById('staffCount').textContent=staff.length;
+  const searchEl=document.getElementById('staffSearch');
+  const term=(searchEl?searchEl.value:'').trim().toLowerCase();
+  const allStaff=getStaff();
+  const staff=term?allStaff.filter(s=>s.name.toLowerCase().includes(term)):allStaff;
+  document.getElementById('staffCount').textContent=term?staff.length+'/'+allStaff.length:staff.length;
   const el=document.getElementById('staffList');
-  if(!staff.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">👥</div><p>No staff added yet</p></div>';return;}
+  if(!allStaff.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">👥</div><p>No staff added yet</p></div>';return;}
+  if(!staff.length){el.innerHTML='<div class="empty-state"><p>No staff matching "'+escHtml(term)+'"</p></div>';return;}
   el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions"><button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
 }
 function openAddStaff(){
@@ -1521,6 +1555,9 @@ function generateReport(){
   const from=document.getElementById('rptFrom').value,to=document.getElementById('rptTo').value,sf=document.getElementById('rptStaff').value;
   if(!from||!to){showToast('Select dates');return;}
   const att=getAtt(),staff=getStaff(),dates=getDatesInRange(from,to);
+  const prevTo=new Date(from+'T00:00:00');prevTo.setDate(prevTo.getDate()-1);
+  const prevFrom=new Date(prevTo);prevFrom.setDate(prevFrom.getDate()-(dates.length-1));
+  const prevDates=getDatesInRange(toKey(prevFrom),toKey(prevTo));
   const target=sf?staff.filter(s=>s.id===sf):staff;const summaries=[];
   target.forEach(s=>{
     let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0;const rows=[];
@@ -1539,13 +1576,25 @@ function generateReport(){
     const pfAmount=pfOn?Math.round(grossEarned*settings.pfRate/100):0;
     const esiAmount=esiOn?Math.round(grossEarned*settings.esiRate/100):0;
     const netPay=Math.round(grossEarned-pfAmount-esiAmount);
-    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,perDaySalary,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay});
+    const prevPct=computeQuickPct(s.id,prevDates,att);
+    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,perDaySalary,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,prevPct});
   });
   lastReportData=summaries;
   lastDayWiseData=buildDayWiseData(dates,target,att);
   renderStickyBar(summaries);
   renderHighlights(summaries);
   renderReportTable();
+}
+function computeQuickPct(staffId,dates,att){
+  let present=0,workDays=0;
+  dates.forEach(d=>{
+    const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
+    if(isWO||isHol)return;
+    workDays++;
+    const rec=att.find(a=>a.staffId===staffId&&a.date===d);
+    if(rec&&rec.inTime&&rec.status!=='Absent'&&rec.status!=='Half Day')present++;
+  });
+  return workDays>0?Math.round(present/workDays*100):null;
 }
 function buildDayWiseData(dates,targetStaff,att){
   return dates.map(d=>{
@@ -1612,13 +1661,21 @@ function renderStaffWiseTable(summaries){
     const reasons=s.rows.filter(r=>r.reason).map(r=>r.reason);
     const reasonChip=reasons.length?`<div class="row-reason">💬 ${escHtml(reasons[0])}${reasons.length>1?' <span class="more-tag">+'+(reasons.length-1)+' more</span>':''}</div>`:'';
     const badges=['✅ '+s.present,'❌ '+s.absent,s.late?'⏰ '+s.late:'',s.earlyOut?'🌅 '+s.earlyOut:'',s.halfDay?'🔶 '+s.halfDay:'',s.overtime?'🔵 '+s.overtime:''].filter(Boolean).join(' · ');
+    let trendHtml='';
+    if(s.prevPct!==null){
+      const diff=s.pct-s.prevPct;
+      if(diff>0)trendHtml=`<span class="trend-up">▲ ${diff}% vs last period</span>`;
+      else if(diff<0)trendHtml=`<span class="trend-down">▼ ${Math.abs(diff)}% vs last period</span>`;
+      else trendHtml=`<span class="trend-flat">= same as last period</span>`;
+    }
     const payrollHtml=s.staff.salary?`<div class="row-payroll"><span class="htag" style="background:var(--blush2)">📅 ${s.payableDays}/${s.workDays}d</span><span class="htag" style="background:var(--blush2)">Gross ₹${s.grossEarned.toLocaleString('en-IN')}</span>${s.pfOn?'<span class="htag" style="background:var(--blush2)">PF −₹'+s.pfAmount.toLocaleString('en-IN')+'</span>':''}${s.esiOn?'<span class="htag" style="background:var(--blush2)">ESI −₹'+s.esiAmount.toLocaleString('en-IN')+'</span>':''}<span class="htag" style="background:var(--green);color:#fff;font-weight:700">Net ₹${s.netPay.toLocaleString('en-IN')}</span></div>`:'';
+    const actionsHtml=`<div class="row-actions"><button class="row-action-btn" onclick="whatsappShareSummary('${s.staff.id}')">💬 WhatsApp</button>${s.staff.salary?`<button class="row-action-btn" onclick="downloadPayslipPDF('${s.staff.id}')">📄 PDF Slip</button>`:''}</div>`;
     return `<details class="report-row"><summary>
       <span class="report-row-chevron">▶</span>
-      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${escHtml(s.staff.name)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div>${reasonChip}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${escHtml(s.staff.name)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div>${reasonChip}${trendHtml}</div>
       <span class="pct-badge ${pctClass}">${s.pct}%</span>
     </summary>
-    <div class="report-row-body">${payrollHtml}${renderMiniTable(s.rows.map(r=>({label:r.date,mono:true,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason})),'Date')}</div></details>`;
+    <div class="report-row-body">${payrollHtml}${actionsHtml}${renderMiniTable(s.rows.map(r=>({label:r.date,mono:true,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason})),'Date')}</div></details>`;
   }).join('');
 }
 function renderDayWiseTable(dayData){
@@ -1643,6 +1700,118 @@ function exportPayrollCSV(){
   dlCSV(rows,'varnica_payroll.csv');
 }
 function exportReportCSV(){if(!lastReportData.length){showToast('Generate report first');return;}const rows=[['Staff','Role','Date','Status','IN','OUT','Hours','Reason']];lastReportData.forEach(s=>{s.rows.forEach(r=>{rows.push([s.staff.name,s.staff.role||'',r.date,r.status,r.inTime,r.outTime,r.hours,r.reason]);});});dlCSV(rows,'varnica_report.csv');}
+
+// ══════════════════════════════════════════════
+// PAYSLIP PDF (client-side, jsPDF)
+// ══════════════════════════════════════════════
+function periodLabel(){const f=document.getElementById('rptFrom').value,t=document.getElementById('rptTo').value;return f+' to '+t;}
+function numberToWordsIndian(num){
+  num=Math.round(num);if(num===0)return 'Zero';
+  const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function two(n){return n<20?ones[n]:tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');}
+  function three(n){return n<100?two(n):ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+two(n%100):'');}
+  let n=num,crore=Math.floor(n/10000000);n%=10000000;let lakh=Math.floor(n/100000);n%=100000;
+  let thousand=Math.floor(n/1000);n%=1000;let rest=n;const parts=[];
+  if(crore)parts.push(three(crore)+' Crore');
+  if(lakh)parts.push(three(lakh)+' Lakh');
+  if(thousand)parts.push(three(thousand)+' Thousand');
+  if(rest)parts.push(three(rest));
+  return parts.join(' ')||'Zero';
+}
+function drawPayslipPage(doc,s,pl){
+  const M=16,W=210-2*M;let y=M;
+  doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(92,66,32);
+  doc.text('VARNICA JEWELS',105,y+6,{align:'center'});
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(122,92,58);
+  doc.text('Zaveri Bazaar, Mumbai  \u2022  Gold Jewellery Wholesale',105,y+12,{align:'center'});
+  y+=20;
+  doc.setFillColor(139,106,53);doc.rect(M,y,W,9,'F');
+  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('SALARY ESTIMATE \u2014 '+pl,105,y+6,{align:'center'});
+  y+=15;
+  doc.setDrawColor(232,212,200);doc.setFillColor(248,238,232);doc.rect(M,y,W,22,'FD');
+  const rowH=22/3;
+  const info=[['Employee Name',s.staff.name,'Employee ID',s.staff.id],
+    ['Role',s.staff.role||'-','Shift Timing',(s.staff.shiftIn||'-')+' \u2013 '+(s.staff.shiftOut||'-')],
+    ['PF Applicable',s.pfOn?'Yes':'No','ESI Applicable',s.esiOn?'Yes':'No']];
+  info.forEach((r,i)=>{
+    const ry=y+4+i*rowH;
+    doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
+    doc.text(r[0],M+4,ry);doc.text(r[2],M+4+W/2,ry);
+    doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
+    doc.text(String(r[1]),M+4+38,ry);doc.text(String(r[3]),M+4+W/2+32,ry);
+  });
+  y+=27;
+  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(92,66,32);
+  doc.text('Attendance Summary \u2014 '+pl,M,y);y+=4;
+  const cols=['Working Days','Present','Late','Half Day','Early Out','Overtime','Absent','Payable Days','Attendance %'];
+  const vals=[s.workDays,s.present,s.late,s.halfDay,s.earlyOut,s.overtime,s.absent,s.payableDays,s.pct+'%'];
+  const colW=W/cols.length;
+  doc.setFillColor(92,66,32);doc.rect(M,y,W,10,'F');
+  doc.setTextColor(255,255,255);doc.setFontSize(6.6);doc.setFont('helvetica','bold');
+  cols.forEach((c,i)=>{const lines=doc.splitTextToSize(c,colW-2);doc.text(lines,M+i*colW+colW/2,y+3.6,{align:'center'});});
+  y+=10;
+  doc.setFillColor(235,245,238);doc.rect(M,y,W,8,'F');
+  doc.setTextColor(44,26,10);doc.setFontSize(9);doc.setFont('helvetica','bold');
+  vals.forEach((v,i)=>{doc.text(String(v),M+i*colW+colW/2,y+5.5,{align:'center'});});
+  y+=17;
+  if(s.staff.salary){
+    const settings=getSettings();
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(92,66,32);
+    doc.text('Earnings & Deductions',M,y);y+=4;
+    const halfW=W/2;
+    doc.setDrawColor(232,212,200);doc.rect(M,y,W,28);doc.line(M+halfW,y,M+halfW,y+28);
+    doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
+    doc.text('Gross Earned',M+4,y+6);
+    doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
+    doc.text('Rs '+s.grossEarned.toLocaleString('en-IN'),M+4,y+11);
+    doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
+    doc.text('PF ('+settings.pfRate+'%)',M+halfW+4,y+6);
+    doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
+    doc.text('Rs '+(s.pfOn?s.pfAmount:0).toLocaleString('en-IN'),M+halfW+4,y+11);
+    doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
+    doc.text('ESI ('+settings.esiRate+'%)',M+halfW+4,y+17);
+    doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
+    doc.text('Rs '+(s.esiOn?s.esiAmount:0).toLocaleString('en-IN'),M+halfW+4,y+22);
+    y+=34;
+    doc.setFillColor(74,140,92);doc.rect(M,y,W,14,'F');
+    doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+    doc.text('NET PAY (Take-Home)',M+5,y+9);
+    doc.setFontSize(15);doc.text('Rs '+s.netPay.toLocaleString('en-IN'),M+W-5,y+9.5,{align:'right'});
+    y+=19;
+    doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(122,92,58);
+    doc.text('In words: Rupees '+numberToWordsIndian(s.netPay)+' Only',M,y);
+  }else{
+    doc.setFont('helvetica','italic');doc.setFontSize(9);doc.setTextColor(122,92,58);
+    doc.text('No salary set for this staff \u2014 attendance summary only.',M,y);
+  }
+}
+function downloadPayslipPDF(staffId){
+  const s=lastReportData.find(x=>x.staff.id===staffId);
+  if(!s){showToast('Pehle report generate karo');return;}
+  if(typeof window.jspdf==='undefined'){showToast('PDF library load ho rahi hai, thoda ruk ke try karo');return;}
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  drawPayslipPage(doc,s,periodLabel());
+  doc.save('Payslip_'+s.staff.name.replace(/\s+/g,'_')+'.pdf');
+}
+function downloadFullPayrollPDF(){
+  if(!lastReportData.length){showToast('Pehle report generate karo');return;}
+  if(typeof window.jspdf==='undefined'){showToast('PDF library load ho rahi hai, thoda ruk ke try karo');return;}
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pl=periodLabel();
+  lastReportData.forEach((s,i)=>{if(i>0)doc.addPage();drawPayslipPage(doc,s,pl);});
+  doc.save('Varnica_Payroll_'+document.getElementById('rptFrom').value+'_to_'+document.getElementById('rptTo').value+'.pdf');
+}
+function whatsappShareSummary(staffId){
+  const s=lastReportData.find(x=>x.staff.id===staffId);
+  if(!s){showToast('Pehle report generate karo');return;}
+  let msg='*Varnica Jewels \u2014 Attendance Summary*\n'+s.staff.name+' ('+(s.staff.role||'')+')\nPeriod: '+periodLabel()+'\n\n\u2705 Present: '+s.present+'\n\u274c Absent: '+s.absent+'\n\u23f0 Late: '+s.late+'\n\ud83d\udd36 Half Day: '+s.halfDay+'\n\ud83d\udcca Attendance: '+s.pct+'%';
+  if(s.staff.salary)msg+='\n\n\ud83d\udcb0 Net Pay: \u20b9'+s.netPay.toLocaleString('en-IN');
+  window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
+}
 
 // ══════════════════════════════════════════════
 // TODAY LOG
