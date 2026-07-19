@@ -288,6 +288,8 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .mini-table td{padding:6px;border-bottom:1px solid var(--blush2);}
 .mini-table .mono{font-family:monospace;font-size:11px;}
 .reason-cell{font-size:10.5px;color:var(--orange);font-style:italic;}
+.photo-ic{cursor:pointer;font-size:12px;opacity:0.75;}
+.photo-ic:active{opacity:1;transform:scale(1.15);}
 .trend-up{font-size:10px;font-weight:700;color:var(--green);display:inline-block;margin-top:2px;}
 .trend-down{font-size:10px;font-weight:700;color:var(--red);display:inline-block;margin-top:2px;}
 .trend-flat{font-size:10px;font-weight:600;color:var(--text3);display:inline-block;margin-top:2px;}
@@ -850,6 +852,14 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   </div>
 </div>
 
+<div class="popup-ov" id="photoLightbox">
+  <div class="popup-box" style="max-width:320px;padding:16px">
+    <div class="popup-title" style="font-size:16px;margin-bottom:10px">📷 Punch Photo</div>
+    <img id="photoLightboxImg" src="" style="width:100%;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,0.15)">
+    <button class="btn btn-secondary" style="margin-top:12px" onclick="closePopup('photoLightbox')">Close</button>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════════
 // CONFIG — MASTER LICENSE CHECK
@@ -1062,6 +1072,7 @@ async function init(){
   await loadFaceApi();
   checkConnection();setInterval(checkConnection,10000);
   renderBirthdayBanner();
+  prunePunchPhotos();
   // Camera via Start Scan button only
   renderTodayLog();setDefaultDates();loadSheetUrl();updateSyncUI();
 }
@@ -1283,7 +1294,7 @@ async function startScanLoop(){
             const match=faceMatcher.findBestMatch(det.descriptor);
             if(match.label!=='unknown'){
               const staff=getStaff().find(s=>s.id===match.label);
-              if(staff){guide.className='face-guide matched';cooldown=true;await handlePunch(staff);
+              if(staff){guide.className='face-guide matched';cooldown=true;const punchPhoto=capturePunchThumbnail();await handlePunch(staff,punchPhoto);
               setTimeout(()=>{cooldown=false;guide.className='face-guide';
               label.textContent='Next scan ke liye Start dabao';resetStatusCard();
               const ov=document.getElementById('scanOverlay');if(ov)ov.classList.remove('hidden');
@@ -1305,19 +1316,35 @@ async function startScanLoop(){
 // ══════════════════════════════════════════════
 // PUNCH
 // ══════════════════════════════════════════════
-async function handlePunch(staff){
+function capturePunchThumbnail(){
+  try{
+    const v=document.getElementById('mainVideo');
+    if(!v||!v.videoWidth)return null;
+    const c=document.createElement('canvas');
+    c.width=90;c.height=90;
+    const ctx=c.getContext('2d');
+    ctx.save();ctx.scale(-1,1);
+    // center-crop the video frame to a square before drawing into the 90x90 thumbnail
+    const side=Math.min(v.videoWidth,v.videoHeight);
+    const sx=(v.videoWidth-side)/2,sy=(v.videoHeight-side)/2;
+    ctx.drawImage(v,sx,sy,side,side,-90,0,90,90);
+    ctx.restore();
+    return c.toDataURL('image/jpeg',0.4);
+  }catch(e){return null;}
+}
+async function handlePunch(staff,photo){
   const yesterday=toKey(new Date(Date.now()-86400000));
   const yAtt=getAtt().find(a=>a.staffId===staff.id&&a.date===yesterday);
   if(!yAtt&&!isWeekOff(new Date(Date.now()-86400000))&&!isHoliday(yesterday)){
     pendingAbsentId=staff.id;
     document.getElementById('absentMsg').textContent=staff.name+', you were absent on '+yesterday+'. Please provide a reason.';
     document.getElementById('absentReason').value='';document.getElementById('absentReqMsg').style.display='none';
-    pendingPunchData={staff};openPopup('absentPopup');return;
+    pendingPunchData={staff,photo};openPopup('absentPopup');return;
   }
-  doPunch(staff);
+  doPunch(staff,photo);
 }
 
-function doPunch(staff){
+function doPunch(staff,photo){
   const now=new Date(),todayKey=toKey(now),timeStr=now.toLocaleTimeString('en-IN',{hour12:false});
   const settings=getSettings(),att=getAtt();
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
@@ -1326,14 +1353,14 @@ function doPunch(staff){
     const diffMin=timeDiffMin(staff.shiftIn||'09:00',timeStr);
     if(diffMin<=0||diffMin<=settings.grace)status='Present';
     else{status='Late';warningType='late';}
-    if(rec){rec.inTime=timeStr;rec.status=status;rec.method='face';}
-    else att.push({staffId:staff.id,staffName:staff.name,date:todayKey,inTime:timeStr,outTime:null,status,method:'face',hours:0,reason:'',absentReason:''});
+    if(rec){rec.inTime=timeStr;rec.status=status;rec.method='face';rec.inPhoto=photo||rec.inPhoto||'';}
+    else att.push({staffId:staff.id,staffName:staff.name,date:todayKey,inTime:timeStr,outTime:null,status,method:'face',hours:0,reason:'',absentReason:'',inPhoto:photo||'',outPhoto:''});
     setAtt(att);
     const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
     if(warningType){pendingPunchData={staff,punchType:'IN',timeStr,warningType};showWarningPopup(staff,'IN',timeStr,warningType);}
     else{syncRecord(latest);showWelcomePopup(staff,'IN',timeStr,latest);renderTodayLog();updateDashStats();}
   }else{
-    pendingOutData={staff,timeStr,todayKey};
+    pendingOutData={staff,timeStr,todayKey,photo};
     showOutConfirmPopup(staff,rec.inTime,timeStr);
   }
 }
@@ -1354,7 +1381,7 @@ function cancelOutPunch(){
 
 function confirmOutPunch(){
   if(!pendingOutData)return;
-  const{staff,timeStr,todayKey}=pendingOutData;
+  const{staff,timeStr,todayKey,photo}=pendingOutData;
   closePopup('outConfirmPopup');
   const settings=getSettings(),att=getAtt();
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
@@ -1364,7 +1391,7 @@ function confirmOutPunch(){
   const hrs=timeDiffHours(rec.inTime,timeStr);
   const shiftEnd=staff.shiftOut||'18:00';
   const earlyMin=timeDiffMin(timeStr,shiftEnd);
-  rec.outTime=timeStr;rec.hours=hrs;
+  rec.outTime=timeStr;rec.hours=hrs;rec.outPhoto=photo||rec.outPhoto||'';
   if(hrs<settings.halfDay)rec.status='Half Day';
   else if(earlyMin>settings.earlyOut)warningType='early';
   else if(timeDiffMin(shiftEnd,timeStr)>30)rec.status='Overtime';
@@ -1449,7 +1476,7 @@ function submitAbsentReason(){
   if(existing){existing.absentReason=reason;setAtt(att);}
   else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});setAtt(att);}
   syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,status:'Absent',absentReason:reason,hours:0});
-  if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff);
+  if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff,pendingPunchData.photo);
   pendingAbsentId=null;pendingPunchData=null;
 }
 
@@ -1604,8 +1631,8 @@ function generateReport(){
       const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
       if(isWO||isHol){rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});return;}
       workDays++;const rec=att.find(a=>a.staffId===s.id&&a.date===d);
-      if(!rec||!rec.inTime){absent++;rows.push({date:d,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||''});}
-      else{if(rec.status==='Late')late++;if(rec.status==='Half Day')halfDay++;if(rec.status==='Overtime')overtime++;if(rec.status==='Early Out')earlyOut++;if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;rows.push({date:d,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||''});}
+      if(!rec||!rec.inTime){absent++;rows.push({date:d,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:''});}
+      else{if(rec.status==='Late')late++;if(rec.status==='Half Day')halfDay++;if(rec.status==='Overtime')overtime++;if(rec.status==='Early Out')earlyOut++;if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;rows.push({date:d,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||''});}
     });
     const settings=getSettings();
     const payableDays=present+halfDay*0.5;
@@ -1641,8 +1668,8 @@ function buildDayWiseData(dates,targetStaff,att){
     const rows=targetStaff.map(s=>{
       if(isWO||isHol)return{staff:s,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''};
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
-      if(!rec||!rec.inTime)return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||''};
-      return{staff:s,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||''};
+      if(!rec||!rec.inTime)return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:''};
+      return{staff:s,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||''};
     });
     let present=0,absent=0,late=0,halfDay=0,earlyOut=0,overtime=0;
     if(!isWO&&!isHol){rows.forEach(r=>{if(r.status==='Absent')absent++;else{if(r.status==='Late')late++;if(r.status==='Half Day')halfDay++;if(r.status==='Overtime')overtime++;if(r.status==='Early Out')earlyOut++;if(r.status!=='Half Day')present++;}});}
@@ -1714,7 +1741,7 @@ function renderStaffWiseTable(summaries){
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${escHtml(s.staff.name)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div>${reasonChip}${trendHtml}</div>
       <span class="pct-badge ${pctClass}">${s.pct}%</span>
     </summary>
-    <div class="report-row-body">${payrollHtml}${actionsHtml}${renderMiniTable(s.rows.map(r=>({label:r.date,mono:true,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason})),'Date')}</div></details>`;
+    <div class="report-row-body">${payrollHtml}${actionsHtml}${renderMiniTable(s.rows.map(r=>({label:r.date,mono:true,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto})),'Date')}</div></details>`;
   }).join('');
 }
 function renderDayWiseTable(dayData){
@@ -1722,15 +1749,29 @@ function renderDayWiseTable(dayData){
   if(!dayData||!dayData.length){el.innerHTML='<div class="empty-state"><p>No data</p></div>';return;}
   el.innerHTML=dayData.map(d=>{
     if(d.isWO||d.isHol){
-      return `<details class="report-row report-row-off"><summary><span class="report-row-chevron">▶</span><div style="flex:1"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${d.isHol?'🎉 Holiday':'🏖️ Week Off'}</div></div></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason})),'Staff')}</div></details>`;
+      return `<details class="report-row report-row-off"><summary><span class="report-row-chevron">▶</span><div style="flex:1"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${d.isHol?'🎉 Holiday':'🏖️ Week Off'}</div></div></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto})),'Staff')}</div></details>`;
     }
     const pctClass=d.pct>=90?'pct-good':d.pct>=75?'pct-mid':'pct-bad';
     const badges=['✅ '+d.present,'❌ '+d.absent,d.late?'⏰ '+d.late:'',d.earlyOut?'🌅 '+d.earlyOut:'',d.halfDay?'🔶 '+d.halfDay:'',d.overtime?'🔵 '+d.overtime:''].filter(Boolean).join(' · ');
-    return `<details class="report-row"><summary><span class="report-row-chevron">▶</span><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div></div><span class="pct-badge ${pctClass}">${d.pct}%</span></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason})),'Staff')}</div></details>`;
+    return `<details class="report-row"><summary><span class="report-row-chevron">▶</span><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div></div><span class="pct-badge ${pctClass}">${d.pct}%</span></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto})),'Staff')}</div></details>`;
   }).join('');
 }
+let _photoViewCache=[];
+function stashPhoto(src){if(!src)return -1;_photoViewCache.push(src);return _photoViewCache.length-1;}
+function viewPunchPhoto(idx){
+  const src=_photoViewCache[idx];if(!src)return;
+  document.getElementById('photoLightboxImg').src=src;
+  openPopup('photoLightbox');
+}
 function renderMiniTable(rows,firstColLabel){
-  return `<table class="mini-table"><thead><tr><th>${firstColLabel}</th><th>Status</th><th>IN</th><th>OUT</th><th>Hrs</th><th>Reason</th></tr></thead><tbody>${rows.map(r=>`<tr><td${r.mono?' class="mono"':''}>${escHtml(r.label)}</td><td style="font-weight:600;color:${statusColor(r.status)}">${r.status}</td><td class="mono">${r.inTime}</td><td class="mono">${r.outTime}</td><td>${r.hours}</td><td class="reason-cell">${escHtml(r.reason)}</td></tr>`).join('')}</tbody></table>`;
+  _photoViewCache=[];
+  return `<table class="mini-table"><thead><tr><th>${firstColLabel}</th><th>Status</th><th>IN</th><th>OUT</th><th>Hrs</th><th>Reason</th></tr></thead><tbody>${rows.map(r=>{
+    const inIdx=stashPhoto(r.inPhoto);
+    const outIdx=stashPhoto(r.outPhoto);
+    const inCell=r.inTime+(inIdx>=0?` <span class="photo-ic" onclick="viewPunchPhoto(${inIdx})">📷</span>`:'');
+    const outCell=r.outTime+(outIdx>=0?` <span class="photo-ic" onclick="viewPunchPhoto(${outIdx})">📷</span>`:'');
+    return `<tr><td${r.mono?' class="mono"':''}>${escHtml(r.label)}</td><td style="font-weight:600;color:${statusColor(r.status)}">${r.status}</td><td class="mono">${inCell}</td><td class="mono">${outCell}</td><td>${r.hours}</td><td class="reason-cell">${escHtml(r.reason)}</td></tr>`;
+  }).join('')}</tbody></table>`;
 }
 function exportPayrollCSV(){
   if(!lastReportData||!lastReportData.length){showToast('Pehle report generate karo');return;}
@@ -1902,6 +1943,18 @@ function isBirthdayToday(staff){
   if(!staff||!staff.dob)return false;
   const today=new Date(),dob=new Date(staff.dob+'T00:00:00');
   return today.getMonth()===dob.getMonth()&&today.getDate()===dob.getDate();
+}
+function prunePunchPhotos(){
+  const cutoff=new Date();cutoff.setDate(cutoff.getDate()-30);
+  const cutoffKey=toKey(cutoff);
+  const att=getAtt();let changed=false;
+  att.forEach(a=>{
+    if(a.date<cutoffKey){
+      if(a.inPhoto){a.inPhoto='';changed=true;}
+      if(a.outPhoto){a.outPhoto='';changed=true;}
+    }
+  });
+  if(changed)setAtt(att);
 }
 function getTodaysBirthdayStaff(){return getStaff().filter(isBirthdayToday);}
 function renderBirthdayBanner(){
