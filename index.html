@@ -564,6 +564,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div><label class="il">Entry Type</label>
         <select class="if" id="manType" onchange="toggleManFields()">
           <option value="">-- Type --</option>
+          <option value="regular">✅ Regular Punch (IN + OUT)</option>
           <option value="late_in">⏰ Late IN</option>
           <option value="early_out">🌅 Early OUT</option>
           <option value="absent">❌ Absent</option>
@@ -1942,7 +1943,7 @@ function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>
 function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(id==='punchPage'){document.querySelector('.nav-btn').classList.add('active');if(!mainStream)startMainCam();}}
 function goAdmin(){curPin='';document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));document.getElementById('pinError').textContent='';document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('adminLoginPage').classList.add('active');}
 function adminLogout(){showPage('punchPage');}
-function aTab(tab){['dash','staff','report','appr','sync','settings'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings'].indexOf(tab);if(idx>=0)document.querySelectorAll('.tab-btn')[idx].classList.add('active');if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}}
+function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){populateManStaff();const md=document.getElementById('manDate');if(md&&!md.value)md.value=toKey(new Date());}}
 
 // PIN
 function pk(k){if(curPin.length>=4)return;curPin+=k;document.getElementById('d'+(curPin.length-1)).classList.add('filled');if(curPin.length===4)checkPin();}
@@ -2035,8 +2036,12 @@ function populateManStaff(){
 }
 function toggleManFields(){
   const t=document.getElementById('manType').value;
-  document.getElementById('manTimeRow').style.display=(t==='late_in'||t==='early_out')?'grid':'none';
-  document.getElementById('manReasonRow').style.display=t?'block':'none';
+  document.getElementById('manTimeRow').style.display=(t==='late_in'||t==='early_out'||t==='regular')?'grid':'none';
+  const reasonRow=document.getElementById('manReasonRow');
+  reasonRow.style.display=t?'block':'none';
+  // Regular Punch mein reason optional — asterisk hataao
+  const reasonLbl=reasonRow.querySelector('label');
+  if(reasonLbl)reasonLbl.innerHTML=t==='regular'?'Reason (optional)':'Reason <span style="color:var(--red)">*</span>';
   document.getElementById('manErrMsg').style.display='none';
 }
 function loadManRec(){
@@ -2064,20 +2069,37 @@ function saveManEntry(){
     type=document.getElementById('manType').value,reason=document.getElementById('manReason').value.trim(),
     inT=document.getElementById('manInTime').value,outT=document.getElementById('manOutTime').value;
   if(!sid||!date||!type){showToast('Staff, Date aur Type zaroori hai');return;}
-  if(type&&!reason){document.getElementById('manErrMsg').style.display='block';return;}
+  // Regular Punch: reason optional, IN required
+  if(type==='regular'){
+    if(!inT){showToast('IN Time zaroori hai (Regular Punch ke liye)');return;}
+  }else if(!reason){document.getElementById('manErrMsg').style.display='block';return;}
   document.getElementById('manErrMsg').style.display='none';
   const staff=getStaff().find(s=>s.id===sid);if(!staff)return;
+  const settings=getSettings();
   const att=getAtt();let rec=att.find(a=>a.staffId===sid&&a.date===date);
-  const sm={'late_in':'Late','early_out':'Present','absent':'Absent','leave':'Leave','half_day':'Half Day'};
+  const sm={'late_in':'Late','early_out':'Present','absent':'Absent','leave':'Leave','half_day':'Half Day','regular':'Present'};
   if(!rec){rec={staffId:sid,staffName:staff.name,date,inTime:inT||'',outTime:outT||'',status:sm[type],method:'manual',hours:0,reason:'',absentReason:''};att.push(rec);}
   if(type==='late_in'){rec.status='Late';rec.reason=reason;if(inT)rec.inTime=inT;}
   else if(type==='early_out'){rec.reason=reason;if(outT)rec.outTime=outT;}
   else if(type==='absent'){rec.status='Absent';rec.absentReason=reason;rec.inTime='';rec.outTime='';}
+  else if(type==='regular'){
+    // Face-punch jaisa hi logic: shift timing + hours ke hisaab se status auto-set
+    rec.inTime=inT;rec.outTime=outT||'';rec.reason=reason||'';rec.absentReason='';
+    const shiftIn=staff.shiftIn||'09:00',shiftOut=staff.shiftOut||'18:00';
+    const lateMin=timeDiffMin(shiftIn,inT);
+    let status=(lateMin>settings.grace)?'Late':'Present';
+    if(outT){
+      const hrs=timeDiffHours(inT,outT);
+      if(hrs<settings.halfDay)status='Half Day';
+      else if(timeDiffMin(shiftOut,outT)>30)status='Overtime';
+    }
+    rec.status=status;
+  }
   else{rec.status=sm[type];rec.reason=reason;}
   if(inT&&!rec.inTime)rec.inTime=inT;if(outT)rec.outTime=outT;
   if(rec.inTime&&rec.outTime)rec.hours=timeDiffHours(rec.inTime,rec.outTime);
   rec.method='manual';setAtt(att);syncRecord(rec);renderTodayLog();updateDashStats();
-  showToast('✅ '+staff.name+' ka record save!');loadManRec();
+  showToast('✅ '+staff.name+' ka record save! ('+rec.status+')');loadManRec();
 }
 function delManEntry(){
   const sid=document.getElementById('manStaff').value,date=document.getElementById('manDate').value;
