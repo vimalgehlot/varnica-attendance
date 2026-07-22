@@ -695,6 +695,15 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       </div>
     </div>
     <div id="settingsFullOnly">
+    <div class="card" id="storageCard">
+      <div class="sec-title">💾 Storage</div>
+      <div class="set-row">
+        <div><div class="set-lbl">Storage Used</div><div class="set-sub" id="storageSub">Calculating...</div></div>
+        <div class="set-val" id="storageVal">--</div>
+      </div>
+      <button class="btn btn-outline" onclick="optimizeStorage()" style="margin-top:8px;width:100%">🧹 Optimize Storage (photos compress karo)</button>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">Agar "Quota Exceeded" error aaye ya storage 4 MB+ ho, ye button dabao.</div>
+    </div>
     <div class="card">
       <div class="sec-title">⏰ Timing Rules</div>
       <div class="set-row"><div><div class="set-lbl">Late Grace Period</div><div class="set-sub">Minutes after shift start = Present</div></div><div class="set-val" onclick="editSetting('grace')" id="graceVal">10 min</div></div>
@@ -893,10 +902,65 @@ const CLOUD_SYNC_KEYS=['staff','att','settings'];
 const DB={
   get:k=>{try{return JSON.parse(localStorage.getItem('vj_'+k));}catch{return null;}},
   set:(k,v)=>{
-    localStorage.setItem('vj_'+k,JSON.stringify(v));
-    if(CLOUD_SYNC_KEYS.includes(k))cloudBackupSync(k,v);
+    try{
+      localStorage.setItem('vj_'+k,JSON.stringify(v));
+      if(CLOUD_SYNC_KEYS.includes(k))cloudBackupSync(k,v);
+      return true;
+    }catch(e){
+      if(e&&(e.name==='QuotaExceededError'||e.code===22||String(e).includes('quota'))){
+        // Try emergency cleanup: strip old punch photos
+        try{emergencyCleanupPhotos();localStorage.setItem('vj_'+k,JSON.stringify(v));if(CLOUD_SYNC_KEYS.includes(k))cloudBackupSync(k,v);showToast('⚠️ Storage bhar gaya tha — auto-cleanup kiya. Ho gaya.');return true;}catch(e2){
+          showToast('❌ Storage FULL! Settings → Optimize Storage dabao, ya purani photos delete karo.');
+          console.error('Storage quota exceeded:',e);
+          return false;
+        }
+      }
+      console.error('DB.set error:',e);return false;
+    }
   }
 };
+function emergencyCleanupPhotos(){
+  // Aggressive: strip ALL punch photos (not just 30-day old)
+  const att=JSON.parse(localStorage.getItem('vj_att')||'[]');
+  att.forEach(r=>{delete r.inPhoto;delete r.outPhoto;});
+  localStorage.setItem('vj_att',JSON.stringify(att));
+}
+function getStorageBytes(){let t=0;for(const k in localStorage){if(localStorage.hasOwnProperty(k))t+=(localStorage[k].length+k.length)*2;}return t;}
+function fmtBytes(b){if(b<1024)return b+' B';if(b<1024*1024)return (b/1024).toFixed(1)+' KB';return (b/1024/1024).toFixed(2)+' MB';}
+// ══════════════════════════════════════════════
+// PHOTO COMPRESSION (storage optimization)
+// ══════════════════════════════════════════════
+function compressPhoto(dataUrl,maxDim=240,quality=0.75){
+  return new Promise(resolve=>{
+    if(!dataUrl){resolve('');return;}
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const scale=Math.min(maxDim/img.width,maxDim/img.height,1);
+        const w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale));
+        const c=document.createElement('canvas');c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(c.toDataURL('image/jpeg',quality));
+      }catch(e){resolve(dataUrl);}
+    };
+    img.onerror=()=>resolve(dataUrl);
+    img.src=dataUrl;
+  });
+}
+async function migrateExistingPhotos(){
+  if(DB.get('photosMigrated_v1'))return;
+  const staff=getStaff();let n=0,before=0,after=0;
+  for(const s of staff){
+    if(s.photo&&s.photo.length>25000){
+      before+=s.photo.length;
+      const small=await compressPhoto(s.photo,240,0.75);
+      s.photo=small;after+=small.length;n++;
+    }
+  }
+  if(n){setStaff(staff);console.log('[migrate] compressed',n,'photos:',fmtBytes(before),'→',fmtBytes(after));}
+  DB.set('photosMigrated_v1',true);
+}
+
 let cloudBackupTimer=null;
 function cloudBackupSync(key,value){
   // debounce so rapid successive saves don't fire a flood of requests
@@ -1077,6 +1141,7 @@ async function init(){
   checkConnection();setInterval(checkConnection,10000);
   renderBirthdayBanner();
   prunePunchPhotos();
+  migrateExistingPhotos();
   // Camera via Start Scan button only
   renderTodayLog();setDefaultDates();loadSheetUrl();updateSyncUI();
 }
@@ -1289,7 +1354,19 @@ async function startMainCam(){
     mainStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
     const v=document.getElementById('mainVideo');v.srcObject=mainStream;await v.play();
     startScanLoop();
-  }catch(e){document.getElementById('camLabel').textContent='Camera access denied. Please allow camera.';}
+  }catch(e){
+    const lbl=document.getElementById('camLabel');
+    let msg='Camera error. Retry karo.';
+    if(e&&e.name==='NotAllowedError')msg='❌ Camera permission denied. Browser settings mein site ko allow karo, ya address bar mein 🔒 icon dabao → Camera → Allow → refresh.';
+    else if(e&&e.name==='NotFoundError')msg='❌ Camera mila nahi. Device par camera hai kya?';
+    else if(e&&e.name==='NotReadableError')msg='❌ Camera koi aur app use kar raha hai. WhatsApp/Zoom band karo aur retry.';
+    else if(e&&e.name==='OverconstrainedError')msg='❌ Camera resolution issue. Kisi aur browser mein try karo.';
+    else if(e)msg='❌ Camera error: '+e.name+'. Refresh karke retry karo.';
+    lbl.textContent=msg;
+    console.error('Camera error:',e);
+    // Show retry via Start Scan button again
+    const ov=document.getElementById('scanOverlay');if(ov)ov.classList.remove('hidden');
+  }
 }
 function stopMainCam(){if(mainStream){mainStream.getTracks().forEach(t=>t.stop());mainStream=null;}}
 async function startRegCam(){
@@ -1306,7 +1383,7 @@ async function startScanLoop(){
   const loop=async()=>{
     if(video.readyState===4&&!cooldown){
       try{
-        const det=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.4})).withFaceLandmarks().withFaceDescriptor();
+        const det=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.5})).withFaceLandmarks().withFaceDescriptor();
         if(det){
           guide.className='face-guide detected';label.textContent='Face detected — matching...';
           if(faceMatcher){
@@ -1585,8 +1662,10 @@ async function saveStaff(){
     }
     if(!descs.length){showToast('No face detected. Better lighting needed.');return;}
     const staff=getStaff();
-    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.pf=pf;s.esi=esi;s.dob=dob;s.descriptors=descs;s.photo=regPhotos[0];}}
-    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,pf,esi,dob,descriptors:descs,photo:regPhotos[0],addedOn:new Date().toISOString()});
+    // Compress photo before storing (240x240 max, JPEG q=0.75) — prevents quota-exceeded
+    const smallPhoto=await compressPhoto(regPhotos[0],240,0.75);
+    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.pf=pf;s.esi=esi;s.dob=dob;s.descriptors=descs;s.photo=smallPhoto;}}
+    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,pf,esi,dob,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString()});
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
     showToast('✅ '+name+' saved with '+descs.length+' face samples!');
   }catch(e){showToast('Error: '+e.message);}
@@ -1629,6 +1708,39 @@ function loadSettingsUI(){
   document.getElementById('esiRateVal').textContent=s.esiRate+'%';
   document.getElementById('esiCeilingVal').textContent='₹'+Number(s.esiCeiling).toLocaleString('en-IN');
   renderHolidays();
+  refreshStorageDisplay();
+}
+function refreshStorageDisplay(){
+  const bytes=getStorageBytes(),mb=bytes/1024/1024;
+  const el=document.getElementById('storageVal'),sub=document.getElementById('storageSub');
+  if(!el)return;
+  el.textContent=fmtBytes(bytes);
+  let color='var(--green)',warn='';
+  if(mb>4){color='var(--red)';warn=' ⚠️ Bharne wala hai — Optimize dabao!';}
+  else if(mb>2.5){color='var(--orange)';warn=' — thodi zyada hai';}
+  el.style.color=color;
+  const staff=getStaff();
+  sub.textContent=staff.length+' staff · Browser limit ~5 MB'+warn;
+}
+async function optimizeStorage(){
+  showToast('🔄 Photos compress ho rahe hain... wait karo');
+  const staff=getStaff();let n=0,before=0,after=0;
+  for(const s of staff){
+    if(s.photo&&s.photo.length>15000){
+      before+=s.photo.length;
+      s.photo=await compressPhoto(s.photo,240,0.75);
+      after+=s.photo.length;n++;
+    }
+  }
+  if(n)setStaff(staff);
+  // Also prune old punch photos aggressively
+  const att=getAtt();let ap=0;
+  const cutoff=new Date();cutoff.setDate(cutoff.getDate()-14); // 14-day (was 30) for extra breathing room
+  const cutoffKey=toKey(cutoff);
+  att.forEach(r=>{if(r.date<cutoffKey){if(r.inPhoto){delete r.inPhoto;ap++;}if(r.outPhoto){delete r.outPhoto;ap++;}}});
+  if(ap)setAtt(att);
+  refreshStorageDisplay();
+  showToast('✅ '+n+' photos compress ki ('+fmtBytes(before-after)+' saved) + '+ap+' purani punch photos hataayi');
 }
 function saveSetting(){const s=getSettings();s.weekOff=parseInt(document.getElementById('weekOffSel').value);setSettings(s);showToast('Updated');}
 function editSetting(key){editingKey=key;const s=getSettings();const labels={grace:'Grace Period (min)',halfDay:'Half Day Threshold (hrs)',earlyOut:'Early Out Threshold (min)',pfRate:'PF Rate (%)',esiRate:'ESI Rate (%)',esiCeiling:'ESI Wage Ceiling (₹)'};document.getElementById('settingLbl').textContent=labels[key];document.getElementById('settingInput').value=s[key];openModal('settingModal');}
