@@ -1933,7 +1933,7 @@ function exportStaffCSV(){const s=getStaff();if(!s.length){showToast('No staff')
 function dlCSV(rows,name){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=name;a.click();showToast('Downloaded!');}
 
 // HELPERS
-function toKey(d){return d.toISOString().split('T')[0];}
+function toKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function timeDiffMin(a,b){const[ah,am]=a.split(':').map(Number);const[bh,bm]=b.split(':').map(Number);return(bh*60+bm)-(ah*60+am);}
 function timeDiffHours(a,b){return timeDiffMin(a,b)/60;}
 function getTimeOfDay(){const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';}
