@@ -703,6 +703,10 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       </div>
       <button class="btn btn-outline" onclick="optimizeStorage()" style="margin-top:8px;width:100%">🧹 Optimize Storage (photos compress karo)</button>
       <div style="font-size:11px;color:var(--text3);margin-top:8px">Agar "Quota Exceeded" error aaye ya storage 4 MB+ ho, ye button dabao.</div>
+      <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
+        <div><div class="set-lbl">📸 Punch Photo Local Save</div><div class="set-sub">OFF = photos sirf VPS cloud pe (recommended, storage safe). ON = photos device pe bhi save (📷 icon se dikhengi).</div></div>
+        <label class="switch"><input type="checkbox" id="photoSaveToggle" onchange="togglePhotoSave()"><span class="switch-slider"></span></label>
+      </div>
     </div>
     <div class="card">
       <div class="sec-title">⏰ Timing Rules</div>
@@ -960,6 +964,17 @@ async function migrateExistingPhotos(){
   if(n){setStaff(staff);console.log('[migrate] compressed',n,'photos:',fmtBytes(before),'→',fmtBytes(after));}
   DB.set('photosMigrated_v1',true);
 }
+function cleanupPunchPhotosOnce(){
+  if(DB.get('punchPhotosCleanedV1'))return;
+  const att=JSON.parse(localStorage.getItem('vj_att')||'[]');
+  let n=0,bytes=0;
+  att.forEach(r=>{
+    if(r.inPhoto){bytes+=r.inPhoto.length;delete r.inPhoto;n++;}
+    if(r.outPhoto){bytes+=r.outPhoto.length;delete r.outPhoto;n++;}
+  });
+  if(n){localStorage.setItem('vj_att',JSON.stringify(att));console.log('[cleanup] removed',n,'punch photos,',fmtBytes(bytes),'freed');}
+  DB.set('punchPhotosCleanedV1',true);
+}
 
 let cloudBackupTimer=null;
 function cloudBackupSync(key,value){
@@ -1029,11 +1044,11 @@ function applyKioskMode(){
   const fo=document.getElementById('settingsFullOnly');if(fo)fo.style.display=kiosk?'none':'';
 }
 const getStaff=()=>DB.get('staff')||[];
-const setStaff=v=>DB.set('staff',v);
+const setStaff=v=>{if(!DB.set('staff',v)){showToast('❌ Staff save FAIL — storage full. Settings → Optimize Storage dabao');return false;}return true;};
 const getAtt=()=>DB.get('att')||[];
-const setAtt=v=>DB.set('att',v);
-const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000},DB.get('settings')||{});
-const setSettings=v=>DB.set('settings',v);
+const setAtt=v=>{if(!DB.set('att',v)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao');return false;}return true;};
+const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:false},DB.get('settings')||{});
+const setSettings=v=>{if(!DB.set('settings',v)){showToast('❌ Settings save FAIL');return false;}return true;};
 const getPending=()=>DB.get('pending')||[];
 const setPending=v=>DB.set('pending',v);
 const getQueue=()=>DB.get('syncQueue')||[];
@@ -1141,6 +1156,7 @@ async function init(){
   checkConnection();setInterval(checkConnection,10000);
   renderBirthdayBanner();
   prunePunchPhotos();
+  cleanupPunchPhotosOnce();
   migrateExistingPhotos();
   // Camera via Start Scan button only
   renderTodayLog();setDefaultDates();loadSheetUrl();updateSyncUI();
@@ -1434,7 +1450,9 @@ async function handlePunch(staff,photo){
     pendingAbsentId=staff.id;
     document.getElementById('absentMsg').textContent=staff.name+', you were absent on '+yesterday+'. Please provide a reason.';
     document.getElementById('absentReason').value='';document.getElementById('absentReqMsg').style.display='none';
-    pendingPunchData={staff,photo};openPopup('absentPopup');return;
+    pendingPunchData={staff,photo};openPopup('absentPopup');
+    setTimeout(()=>{const ta=document.getElementById('absentReason');if(ta){ta.focus();ta.click();}},400);
+    return;
   }
   doPunch(staff,photo);
 }
@@ -1443,21 +1461,24 @@ function doPunch(staff,photo){
   const now=new Date(),todayKey=toKey(now),timeStr=now.toLocaleTimeString('en-IN',{hour12:false});
   const settings=getSettings(),att=getAtt();
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
+  // Default OFF — punch photos NOT saved to localStorage (prevents quota crashes)
+  const savePhotoLocal=settings.localPhotoSave===true;
+  const photoToSave=savePhotoLocal?(photo||''):'';
   if(!rec||!rec.inTime){
     let status,warningType=null;
     const diffMin=timeDiffMin(staff.shiftIn||'09:00',timeStr);
     if(diffMin<=0||diffMin<=settings.grace)status='Present';
     else{status='Late';warningType='late';}
-    if(rec){rec.inTime=timeStr;rec.status=status;rec.method='face';rec.inPhoto=photo||rec.inPhoto||'';}
-    else att.push({staffId:staff.id,staffName:staff.name,date:todayKey,inTime:timeStr,outTime:null,status,method:'face',hours:0,reason:'',absentReason:'',inPhoto:photo||'',outPhoto:''});
-    setAtt(att);
+    if(rec){rec.inTime=timeStr;rec.status=status;rec.method='face';if(savePhotoLocal)rec.inPhoto=photoToSave||rec.inPhoto||'';}
+    else att.push({staffId:staff.id,staffName:staff.name,date:todayKey,inTime:timeStr,outTime:null,status,method:'face',hours:0,reason:'',absentReason:'',inPhoto:photoToSave,outPhoto:''});
+    if(!setAtt(att))return; // save failed — user already notified
     const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
     if(warningType){pendingPunchData={staff,punchType:'IN',timeStr,warningType};showWarningPopup(staff,'IN',timeStr,warningType);}
     else{syncRecord(latest);showWelcomePopup(staff,'IN',timeStr,latest);renderTodayLog();updateDashStats();}
   }else{
     const gapMin=timeDiffMin(rec.inTime,timeStr);
     if(gapMin<2){showToast('✅ Aap already Punch IN ho chuke hain ('+rec.inTime+'). OUT ke liye kam se kam 2 min baad scan karein.');resetStatusCard();return;}
-    pendingOutData={staff,timeStr,todayKey,photo};
+    pendingOutData={staff,timeStr,todayKey,photo:photoToSave};
     showOutConfirmPopup(staff,rec.inTime,timeStr);
   }
 }
@@ -1488,11 +1509,13 @@ function confirmOutPunch(){
   const hrs=timeDiffHours(rec.inTime,timeStr);
   const shiftEnd=staff.shiftOut||'18:00';
   const earlyMin=timeDiffMin(timeStr,shiftEnd);
-  rec.outTime=timeStr;rec.hours=hrs;rec.outPhoto=photo||rec.outPhoto||'';
+  const savePhotoLocal=settings.localPhotoSave===true;
+  rec.outTime=timeStr;rec.hours=hrs;
+  if(savePhotoLocal)rec.outPhoto=photo||rec.outPhoto||'';
   if(hrs<settings.halfDay)rec.status='Half Day';
   else if(earlyMin>settings.earlyOut)warningType='early';
   else if(timeDiffMin(shiftEnd,timeStr)>30)rec.status='Overtime';
-  setAtt(att);
+  if(!setAtt(att))return;
   const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(warningType){pendingPunchData={staff,punchType:'OUT',timeStr,warningType};showWarningPopup(staff,'OUT',timeStr,warningType);}
   else{syncRecord(latest);showWelcomePopup(staff,'OUT',timeStr,latest);renderTodayLog();updateDashStats();}
@@ -1546,34 +1569,36 @@ function showWarningPopup(staff,punchType,timeStr,warningType){
     document.getElementById('wpMsg').textContent='Leaving before shift end ('+(staff.shiftOut||'18:00')+'). Please provide reason.';
   }
   openPopup('warningPopup');
+  setTimeout(()=>{const ta=document.getElementById('wpReason');if(ta){ta.focus();ta.click();}},400);
 }
 
 function submitWarning(){
   const reason=document.getElementById('wpReason').value.trim();
   if(!reason){document.getElementById('wpReqMsg').style.display='block';return;}
-  closePopup('warningPopup');
-  if(!pendingPunchData)return;
+  if(!pendingPunchData){closePopup('warningPopup');return;}
   const{staff,punchType,timeStr,warningType}=pendingPunchData;
   const att=getAtt(),todayKey=toKey(new Date());
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(rec){
     if(warningType==='late'){rec.status='Late';rec.reason=reason;}
     else{rec.earlyOutReason=reason;rec.status=rec.hours<getSettings().halfDay?'Half Day':'Early Out';rec.reason=reason;}
-    setAtt(att);syncRecord(rec);
+    if(!setAtt(att)){return;} // Save failed — popup stays open so user can retry
+    syncRecord(rec);
   }
+  closePopup('warningPopup');
   showWelcomePopup(staff,punchType,timeStr,rec);renderTodayLog();updateDashStats();pendingPunchData=null;
 }
 
 function submitAbsentReason(){
   const reason=document.getElementById('absentReason').value.trim();
   if(!reason){document.getElementById('absentReqMsg').style.display='block';return;}
-  closePopup('absentPopup');
   const yesterday=toKey(new Date(Date.now()-86400000));
   const att=getAtt();
   const staff=getStaff().find(s=>s.id===pendingAbsentId);
   const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===yesterday);
-  if(existing){existing.absentReason=reason;setAtt(att);}
-  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});setAtt(att);}
+  if(existing){existing.absentReason=reason;if(!setAtt(att))return;}
+  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});if(!setAtt(att))return;}
+  closePopup('absentPopup');
   syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,status:'Absent',absentReason:reason,hours:0});
   if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff,pendingPunchData.photo);
   pendingAbsentId=null;pendingPunchData=null;
@@ -1721,6 +1746,13 @@ function refreshStorageDisplay(){
   el.style.color=color;
   const staff=getStaff();
   sub.textContent=staff.length+' staff · Browser limit ~5 MB'+warn;
+  const t=document.getElementById('photoSaveToggle');
+  if(t)t.checked=getSettings().localPhotoSave===true;
+}
+function togglePhotoSave(){
+  const s=getSettings();s.localPhotoSave=document.getElementById('photoSaveToggle').checked;setSettings(s);
+  showToast(s.localPhotoSave?'📸 Punch photos ab device pe bhi save honge (storage jaldi bharega)':'✅ Punch photos sirf VPS cloud pe — device storage safe');
+  refreshStorageDisplay();
 }
 async function optimizeStorage(){
   showToast('🔄 Photos compress ho rahe hain... wait karo');
