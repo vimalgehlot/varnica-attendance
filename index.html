@@ -122,8 +122,11 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 
 /* PUNCH PAGE */
 .punch-scroll{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;align-items:center;}
-.camera-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;}
-.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:300px;object-fit:cover;}
+.camera-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;transition:max-width 0.3s ease;}
+.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:300px;object-fit:cover;cursor:pointer;transition:max-height 0.3s ease;}
+.camera-card.cam-big{max-width:560px;}
+.camera-card.cam-big video{max-height:65vh;}
+.camera-card.cam-big .face-guide{width:230px;height:275px;}
 .cam-corners{position:absolute;inset:0;pointer-events:none;}
 .corner{position:absolute;width:28px;height:28px;}
 .corner::before,.corner::after{content:"";position:absolute;background:var(--brand);border-radius:2px;}
@@ -474,14 +477,14 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   </div>
   <div class="punch-scroll">
     <div class="camera-card">
-      <video id="mainVideo" autoplay muted playsinline></video>
+      <video id="mainVideo" autoplay muted playsinline onclick="toggleCamSize()" title="Tap to enlarge"></video>
       <div class="cam-corners">
         <div class="corner tl"></div><div class="corner tr"></div>
         <div class="corner bl"></div><div class="corner br"></div>
         <div class="face-guide" id="faceGuide"></div>
         <div class="scan-beam"></div>
       </div>
-      <div class="cam-label" id="camLabel">Position your face in the frame</div>
+      <div class="cam-label" id="camLabel">Position your face in the frame · 🔍 Tap video to enlarge</div>
       <div class="scan-overlay" id="scanOverlay">
         <div style="font-size:52px">📷</div>
         <div style="font-weight:800;font-size:17px;color:var(--brand-deep)">Face Scan</div>
@@ -764,7 +767,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="photo-thumbs" id="photoThumbs"></div>
     <div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px" id="capInfo"></div>
     <button class="btn btn-outline" onclick="capturePhoto()">📸 Capture (<span id="capNum">0</span>/5)</button>
-    <button class="btn btn-primary" onclick="saveStaff()">💾 Save Staff</button>
+    <button class="btn btn-primary" id="saveStaffBtn" onclick="saveStaff()">💾 Save Staff</button>
     <button class="btn btn-secondary" onclick="closeModal('staffModal')">Cancel</button>
   </div>
 </div>
@@ -1259,10 +1262,25 @@ function addSyncLog(msg){
 // ══════════════════════════════════════════════
 // CAMERA
 // ══════════════════════════════════════════════
+function toggleCamSize(){
+  const c=document.querySelector('.camera-card');if(!c)return;
+  c.classList.toggle('cam-big');
+}
+let camIdleTmr=null;
+function scheduleCamIdleStop(){
+  clearTimeout(camIdleTmr);
+  camIdleTmr=setTimeout(()=>{
+    stopMainCam();
+    const ov=document.getElementById('scanOverlay');if(ov)ov.classList.remove('hidden');
+    document.getElementById('camLabel').textContent='Camera band ho gaya (1 min idle). Start dabao.';
+    resetStatusCard();
+  },60000);
+}
 async function startScanFromButton(){
   const ov=document.getElementById('scanOverlay');
   if(ov)ov.classList.add('hidden');
   await startMainCam();
+  scheduleCamIdleStop();
 }
 
 async function startMainCam(){
@@ -1295,11 +1313,10 @@ async function startScanLoop(){
             if(match.label!=='unknown'){
               const staff=getStaff().find(s=>s.id===match.label);
               if(staff){guide.className='face-guide matched';cooldown=true;const punchPhoto=capturePunchThumbnail();await handlePunch(staff,punchPhoto);
+              scheduleCamIdleStop();
               setTimeout(()=>{cooldown=false;guide.className='face-guide';
-              label.textContent='Next scan ke liye Start dabao';resetStatusCard();
-              const ov=document.getElementById('scanOverlay');if(ov)ov.classList.remove('hidden');
-              if(mainStream){mainStream.getTracks().forEach(t=>t.stop());mainStream=null;}
-              },4000);}
+              label.textContent='Agla staff scan kare...';resetStatusCard();
+              },2500);}
             }else{
               guide.className='face-guide failed';label.textContent='Not recognized — capturing...';
               await captureFail();cooldown=true;setTimeout(()=>{cooldown=false;guide.className='face-guide';label.textContent='Position your face in the frame';resetStatusCard();},4000);
@@ -1360,6 +1377,8 @@ function doPunch(staff,photo){
     if(warningType){pendingPunchData={staff,punchType:'IN',timeStr,warningType};showWarningPopup(staff,'IN',timeStr,warningType);}
     else{syncRecord(latest);showWelcomePopup(staff,'IN',timeStr,latest);renderTodayLog();updateDashStats();}
   }else{
+    const gapMin=timeDiffMin(rec.inTime,timeStr);
+    if(gapMin<2){showToast('✅ Aap already Punch IN ho chuke hain ('+rec.inTime+'). OUT ke liye kam se kam 2 min baad scan karein.');resetStatusCard();return;}
     pendingOutData={staff,timeStr,todayKey,photo};
     showOutConfirmPopup(staff,rec.inTime,timeStr);
   }
@@ -1432,6 +1451,8 @@ function showWelcomePopup(staff,type,time,rec){
   const m=getSyncMeta();
   si.innerHTML=m.url?'<span style="color:var(--green)">☁️ Syncing to Google Sheets...</span>':'<span style="color:var(--text3)">💾 Saved locally</span>';
   openPopup('welcomePopup');
+  clearTimeout(window._welcomeTmr);
+  window._welcomeTmr=setTimeout(()=>closePopup('welcomePopup'),isBday?5000:2500);
   if(typeof getTodaysBirthdayStaff==='function'&&getTodaysBirthdayStaff().length)burstConfetti();
 }
 
@@ -1533,7 +1554,9 @@ async function capturePhoto(){
   document.getElementById('capNum').textContent=regPhotos.length;
   document.getElementById('capInfo').textContent=regPhotos.length+'/5 '+(regPhotos.length>=3?'✅ Ready':'— capture more for accuracy');
 }
+let _staffSaving=false;
 async function saveStaff(){
+  if(_staffSaving)return;
   const name=document.getElementById('sName').value.trim(),role=document.getElementById('sRole').value.trim();
   const shiftIn=document.getElementById('sIn').value,shiftOut=document.getElementById('sOut').value;
   const salary=parseFloat(document.getElementById('sSalary').value)||0;
@@ -1542,13 +1565,16 @@ async function saveStaff(){
   const dob=document.getElementById('sDob').value||'';
   const eid=document.getElementById('editStaffId').value;
   if(!name){showToast('Enter staff name');return;}
+  if(!eid&&getStaff().some(s=>s.name.trim().toLowerCase()===name.toLowerCase())){showToast('⚠️ "'+name+'" naam ka staff already hai!');return;}
   if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
   if(!regPhotos.length&&eid){
     const staff=getStaff(),s=staff.find(x=>x.id===eid);
     if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.pf=pf;s.esi=esi;s.dob=dob;}
     setStaff(staff);closeModal('staffModal');stopRegCam();renderStaffList();showToast('Updated!');return;
   }
-  showToast('Processing face data...');
+  _staffSaving=true;
+  const saveBtn=document.getElementById('saveStaffBtn');
+  if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='⏳ Saving... face process ho raha hai';saveBtn.style.opacity='0.6';}
   try{
     const descs=[];
     for(const p of regPhotos){
@@ -1563,6 +1589,10 @@ async function saveStaff(){
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
     showToast('✅ '+name+' saved with '+descs.length+' face samples!');
   }catch(e){showToast('Error: '+e.message);}
+  finally{
+    _staffSaving=false;
+    if(saveBtn){saveBtn.disabled=false;saveBtn.textContent='💾 Save Staff';saveBtn.style.opacity='1';}
+  }
 }
 function delStaff(id){if(!confirm('Delete this staff?'))return;setStaff(getStaff().filter(s=>s.id!==id));buildMatcher();renderStaffList();showToast('Deleted');}
 function openTiming(id){const s=getStaff().find(x=>x.id===id);if(!s)return;document.getElementById('timingId').value=id;document.getElementById('timingName').textContent='👤 '+s.name;document.getElementById('tIn').value=s.shiftIn;document.getElementById('tOut').value=s.shiftOut;openModal('timingModal');}
