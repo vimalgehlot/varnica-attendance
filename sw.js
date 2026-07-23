@@ -1,7 +1,7 @@
 // ============================================================
 // VARNICA JEWELS — Service Worker v3.0 (iOS Safe)
 // ============================================================
-const CACHE_NAME = 'varnica-v14';
+const CACHE_NAME = 'varnica-v16';
 
 // Only cache the app shell — NOT models or API calls
 const CACHE_FILES = ['./', './index.html', './manifest.json'];
