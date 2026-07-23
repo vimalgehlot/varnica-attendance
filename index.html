@@ -458,7 +458,10 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   </div>
   <div class="sync-bar">
     <div><span class="sync-dot" id="syncDot"></span><span id="syncStatus" style="color:var(--text2)">Checking...</span></div>
-    <span id="pendingBadge" style="font-size:10px;color:var(--orange);display:none"></span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span id="pendingBadge" style="font-size:10px;color:var(--orange);display:none"></span>
+      <button onclick="hardRefreshApp()" style="background:var(--brand-med);color:#fff;border:none;border-radius:14px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer" title="Cache clear + storage clean + reload">🔄 Refresh</button>
+    </div>
   </div>
   <!-- Birthday Banner -->
   <div class="bday-banner hidden" id="bdayBanner">
@@ -702,7 +705,8 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div class="set-val" id="storageVal">--</div>
       </div>
       <button class="btn btn-outline" onclick="optimizeStorage()" style="margin-top:8px;width:100%">🧹 Optimize Storage (photos compress karo)</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:8px">Agar "Quota Exceeded" error aaye ya storage 4 MB+ ho, ye button dabao.</div>
+      <button class="btn" onclick="deepCleanStorage()" style="margin-top:6px;width:100%;background:var(--red);color:#fff">🧨 Deep Clean (agar storage 4 MB+ ho)</button>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">Optimize = photos compress. Deep Clean = queue + logs + purani photos sab clear. Data safe rahega (VPS pe backup hai).</div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
         <div><div class="set-lbl">📸 Punch Photo (VPS Save)</div><div class="set-sub">ON = har punch ki photo VPS pe safe (device pe nahi). Report tab mein 📷 icon click karke dekh sakte hain. OFF = photos disable.</div></div>
         <label class="switch"><input type="checkbox" id="photoSaveToggle" onchange="togglePhotoSave()"><span class="switch-slider"></span></label>
@@ -924,19 +928,26 @@ const DB={
   }
 };
 function emergencyCleanupPhotos(){
-  // 1. Strip any legacy local punch-photos (belt-and-suspenders, mostly no-op post Option-B)
-  const att=JSON.parse(localStorage.getItem('vj_att')||'[]');
-  att.forEach(r=>{delete r.inPhoto;delete r.outPhoto;});
-  localStorage.setItem('vj_att',JSON.stringify(att));
-  // 2. Cap the Google-Sheets sync queue — if the sheet endpoint has been failing,
-  //    this queue can grow unbounded and become the real storage hog. VPS + localStorage
-  //    already hold the real attendance data safely, so trimming old queue entries is safe.
+  // 1. Strip any legacy local punch-photos from attendance records
   try{
-    const q=JSON.parse(localStorage.getItem('vj_syncQueue')||'[]');
-    if(q.length>40){
-      const trimmed=q.slice(-40);
-      localStorage.setItem('vj_syncQueue',JSON.stringify(trimmed));
-    }
+    const att=JSON.parse(localStorage.getItem('vj_att')||'[]');
+    att.forEach(r=>{delete r.inPhoto;delete r.outPhoto;});
+    localStorage.setItem('vj_att',JSON.stringify(att));
+  }catch(e){}
+  // 2. Strip photo/descriptor fields from ALL queue entries + cap count
+  //    (Google Sheets sync only needs attendance fields, not photos)
+  try{
+    let q=JSON.parse(localStorage.getItem('vj_syncQueue')||'[]');
+    q=q.map(item=>{
+      const c={...item};delete c.inPhoto;delete c.outPhoto;delete c.descriptors;delete c.photo;return c;
+    });
+    if(q.length>40)q=q.slice(-40);
+    localStorage.setItem('vj_syncQueue',JSON.stringify(q));
+  }catch(e){}
+  // 3. Clear old sync logs beyond 20 entries
+  try{
+    const log=JSON.parse(localStorage.getItem('vj_syncLog')||'[]');
+    if(log.length>20)localStorage.setItem('vj_syncLog',JSON.stringify(log.slice(-20)));
   }catch(e){}
 }
 function getStorageBytes(){let t=0;for(const k in localStorage){if(localStorage.hasOwnProperty(k))t+=(localStorage[k].length+k.length)*2;}return t;}
@@ -1592,7 +1603,16 @@ function confirmOutPunch(){
   else{syncRecord(latest);showWelcomePopup(staff,'OUT',timeStr,latest);renderTodayLog();updateDashStats();}
 }
 
-function syncRecord(rec){if(!rec)return;const m=getSyncMeta();if(m.url)addToQueue({action:'punch',...rec});}
+function syncRecord(rec){
+  if(!rec)return;
+  const m=getSyncMeta();if(!m.url)return;
+  // Strip photo/descriptor fields before queueing — Google Sheets ko sirf attendance data chahiye,
+  // photos ya face-descriptors nahi. Isse queue kabhi bloat nahi hoga.
+  const clean={...rec};
+  delete clean.inPhoto;delete clean.outPhoto;
+  delete clean.descriptors;delete clean.photo;
+  addToQueue({action:'punch',...clean});
+}
 
 const BDAY_QUOTES=[
   "Wishing you another year of success, happiness, and great health. Have a wonderful day!",
@@ -1681,12 +1701,21 @@ function submitAbsentReason(){
 
 async function captureFail(){
   const video=document.getElementById('mainVideo'),canvas=document.getElementById('mainCanvas');
+  if(!video.videoWidth){showToast('Camera not ready');return;}
   canvas.width=video.videoWidth;canvas.height=video.videoHeight;
   const ctx=canvas.getContext('2d');ctx.save();ctx.scale(-1,1);ctx.drawImage(video,-canvas.width,0);ctx.restore();
-  const photo=canvas.toDataURL('image/jpeg',0.7);
+  const fullPhoto=canvas.toDataURL('image/jpeg',0.7);
+  // Compress heavily before local save — else storage-full silently drops it
+  const photo=await compressPhoto(fullPhoto,240,0.7);
   const now=new Date(),p=getPending();
-  p.push({id:Date.now().toString(),photo,timestamp:now.toISOString(),date:toKey(now),time:now.toLocaleTimeString('en-IN',{hour12:false}),status:'pending'});
-  setPending(p);openPopup('errorPopup');updateApprBadge();
+  const failId=Date.now().toString();
+  p.push({id:failId,photo,timestamp:now.toISOString(),date:toKey(now),time:now.toLocaleTimeString('en-IN',{hour12:false}),status:'pending'});
+  setPending(p);
+  // Also upload to VPS as backup (fire-and-forget)
+  try{
+    fetch('/api/punch-photo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,id:'unknown_'+failId+'.jpg',photo:fullPhoto})}).catch(()=>{});
+  }catch(e){}
+  openPopup('errorPopup');updateApprBadge();
 }
 
 // ══════════════════════════════════════════════
@@ -1784,7 +1813,14 @@ function saveTiming(){const id=document.getElementById('timingId').value,staff=g
 function renderApprovals(){
   const pending=getPending().filter(p=>p.status==='pending'),el=document.getElementById('apprList'),staff=getStaff();
   if(!pending.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">✅</div><p>No pending approvals</p></div>';return;}
-  el.innerHTML=pending.map(p=>`<div class="appr-card"><img class="appr-photo" src="${p.photo}" alt=""><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div><div style="font-size:13px;font-weight:600">Unknown Face</div><div style="font-size:11px;color:var(--text3)">${p.date} at ${p.time}</div></div><span class="tag tag-warn">Pending</span></div><div class="ig"><label class="il">Assign to Staff</label><select class="if" id="as_${p.id}"><option value="">-- Select --</option>${staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('')}</select></div><div class="appr-actions"><button class="btn-approve" onclick="approveEntry('${p.id}')">✅ Approve</button><button class="btn-reject" onclick="rejectEntry('${p.id}')">❌ Reject</button></div></div>`).join('');
+  el.innerHTML=pending.map(p=>{
+    const vpsUrl='/api/punch-photo/'+TOOL_ID+'/unknown_'+p.id+'.jpg';
+    const photoSrc=p.photo?p.photo:vpsUrl;
+    const photoHtml=photoSrc
+      ? `<img class="appr-photo" src="${photoSrc}" alt="Unknown face" onerror="this.onerror=null;this.src='${vpsUrl}';setTimeout(()=>{if(!this.complete||this.naturalWidth===0)this.style.display='none';},1500)">`
+      : `<div class="appr-photo" style="background:var(--blush2);display:flex;align-items:center;justify-content:center;height:180px;color:var(--text3)"><span style="font-size:36px">👤</span></div>`;
+    return `<div class="appr-card">${photoHtml}<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div><div style="font-size:13px;font-weight:600">Unknown Face</div><div style="font-size:11px;color:var(--text3)">${p.date} at ${p.time}</div></div><span class="tag tag-warn">Pending</span></div><div class="ig"><label class="il">Assign to Staff</label><select class="if" id="as_${p.id}"><option value="">-- Select --</option>${staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('')}</select></div><div class="appr-actions"><button class="btn-approve" onclick="approveEntry('${p.id}')">✅ Approve</button><button class="btn-reject" onclick="rejectEntry('${p.id}')">❌ Reject</button></div></div>`;
+  }).join('');
 }
 function approveEntry(id){
   const sid=document.getElementById('as_'+id)?.value,s=getStaff().find(x=>x.id===sid);
@@ -1828,6 +1864,44 @@ function togglePhotoSave(){
   const s=getSettings();s.localPhotoSave=document.getElementById('photoSaveToggle').checked;setSettings(s);
   showToast(s.localPhotoSave?'📸 Punch photos VPS pe upload hongi (Report mein 📷 icon)':'🚫 Punch photos disable — device aur VPS dono jagah save nahi hongi');
   refreshStorageDisplay();
+}
+async function hardRefreshApp(){
+  if(!confirm('🔄 Fresh Refresh:\n\n• Storage clean karega\n• Cache clear karega (naya code lega)\n• App reload karega\n\nData safe rahega. Aage badhein?'))return;
+  showToast('🔄 Cleaning...',3000);
+  try{
+    emergencyCleanupPhotos();
+    if('caches' in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+  }catch(e){console.warn('Refresh cleanup:',e);}
+  setTimeout(()=>{
+    window.location.reload(true);
+  },500);
+}
+async function deepCleanStorage(){
+  if(!confirm('Deep Clean karega:\n\n• Google Sheets sync queue clear\n• Sync logs clear\n• Purani punch photos records se remove\n• Staff photos aggressive compress\n\nStaff/attendance data safe rahega. VPS backup already hai.\n\nAage badhein?'))return;
+  const beforeMb=(getStorageBytes()/1024/1024).toFixed(2);
+  showToast('🧨 Deep clean chal raha hai...',5000);
+  // 1. Standard emergency cleanup (photos+queue+logs)
+  emergencyCleanupPhotos();
+  // 2. Fully clear sync queue (not just trim — Google Sheets can be re-synced from Sync tab if needed)
+  try{localStorage.setItem('vj_syncQueue','[]');}catch(e){}
+  // 3. Reset migration flags so cleanups re-run
+  try{localStorage.removeItem('vj_photosMigrated_v1');localStorage.removeItem('vj_punchPhotosCleanedV1');}catch(e){}
+  // 4. Aggressively recompress ALL staff photos (180px, q=0.6 — very small but recognizable)
+  const staff=getStaff();let n=0;
+  for(const s of staff){
+    if(s.photo){s.photo=await compressPhoto(s.photo,180,0.6);n++;}
+  }
+  if(n)setStaff(staff);
+  const afterMb=(getStorageBytes()/1024/1024).toFixed(2);
+  refreshStorageDisplay();
+  showToast('✅ Deep clean done: '+beforeMb+' MB → '+afterMb+' MB',6000);
 }
 async function optimizeStorage(){
   showToast('🔄 Photos compress ho rahe hain... wait karo');
@@ -2161,11 +2235,21 @@ function whatsappShareSummary(staffId){
 // TODAY LOG
 // ══════════════════════════════════════════════
 function renderTodayLog(){
-  const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today);
+  const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staffMap={};
+  getStaff().forEach(s=>{staffMap[s.id]=s;});
   ['todayLogMini','dashLog'].forEach(id=>{
     const el=document.getElementById(id);if(!el)return;
     if(!att.length){el.innerHTML='<div class="empty-state" style="padding:16px"><div style="font-size:28px">📭</div><p style="font-size:12px;margin-top:6px">No records yet</p></div>';return;}
-    el.innerHTML=att.slice().reverse().map(a=>{const type=a.outTime?'out':a.status==='Absent'?'fail':'in';const lbl=a.outTime?'OUT':a.status;const lc=a.outTime?'lb-out':a.status==='Late'?'lb-late':a.status==='Absent'?'lb-fail':'lb-in';return '<div class="log-item"><div class="log-dot '+type+'"></div><div class="log-name">'+a.staffName+'</div><div class="log-time">'+(a.outTime||a.inTime||'--')+'</div><span class="log-badge '+lc+'">'+lbl+'</span></div>';}).join('');
+    el.innerHTML=att.slice().reverse().map(a=>{
+      const type=a.outTime?'out':a.status==='Absent'?'fail':'in';
+      const lbl=a.outTime?'OUT':a.status;
+      const lc=a.outTime?'lb-out':a.status==='Late'?'lb-late':a.status==='Absent'?'lb-fail':'lb-in';
+      const s=staffMap[a.staffId];
+      const thumbHtml=s&&s.photo
+        ? `<img src="${s.photo}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0" alt="">`
+        : `<div style="width:32px;height:32px;border-radius:50%;background:var(--blush2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">👤</div>`;
+      return '<div class="log-item"><div class="log-dot '+type+'"></div>'+thumbHtml+'<div class="log-name">'+a.staffName+'</div><div class="log-time">'+(a.outTime||a.inTime||'--')+'</div><span class="log-badge '+lc+'">'+lbl+'</span></div>';
+    }).join('');
   });
 }
 function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staff=getStaff(),present=att.filter(a=>a.status!=='Absent').length,late=att.filter(a=>a.status==='Late').length;document.getElementById('sPresent').textContent=present;document.getElementById('sAbsent').textContent=Math.max(0,staff.length-present);document.getElementById('sLate').textContent=late;document.getElementById('sTotal').textContent=staff.length;}
