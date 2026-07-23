@@ -924,10 +924,20 @@ const DB={
   }
 };
 function emergencyCleanupPhotos(){
-  // Aggressive: strip ALL punch photos (not just 30-day old)
+  // 1. Strip any legacy local punch-photos (belt-and-suspenders, mostly no-op post Option-B)
   const att=JSON.parse(localStorage.getItem('vj_att')||'[]');
   att.forEach(r=>{delete r.inPhoto;delete r.outPhoto;});
   localStorage.setItem('vj_att',JSON.stringify(att));
+  // 2. Cap the Google-Sheets sync queue — if the sheet endpoint has been failing,
+  //    this queue can grow unbounded and become the real storage hog. VPS + localStorage
+  //    already hold the real attendance data safely, so trimming old queue entries is safe.
+  try{
+    const q=JSON.parse(localStorage.getItem('vj_syncQueue')||'[]');
+    if(q.length>40){
+      const trimmed=q.slice(-40);
+      localStorage.setItem('vj_syncQueue',JSON.stringify(trimmed));
+    }
+  }catch(e){}
 }
 function getStorageBytes(){let t=0;for(const k in localStorage){if(localStorage.hasOwnProperty(k))t+=(localStorage[k].length+k.length)*2;}return t;}
 function fmtBytes(b){if(b<1024)return b+' B';if(b<1024*1024)return (b/1024).toFixed(1)+' KB';return (b/1024/1024).toFixed(2)+' MB';}
@@ -1075,9 +1085,9 @@ function applyKioskMode(){
   const fo=document.getElementById('settingsFullOnly');if(fo)fo.style.display=kiosk?'none':'';
 }
 const getStaff=()=>DB.get('staff')||[];
-const setStaff=v=>{if(!DB.set('staff',v)){showToast('❌ Staff save FAIL — storage full. Settings → Optimize Storage dabao');return false;}return true;};
+const setStaff=v=>{if(!DB.set('staff',v)){showToast('❌ Staff save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
 const getAtt=()=>DB.get('att')||[];
-const setAtt=v=>{if(!DB.set('att',v)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao');return false;}return true;};
+const setAtt=v=>{if(!DB.set('att',v)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
 const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true},DB.get('settings')||{});
 const setSettings=v=>{if(!DB.set('settings',v)){showToast('❌ Settings save FAIL');return false;}return true;};
 const getPending=()=>DB.get('pending')||[];
@@ -1189,8 +1199,23 @@ async function init(){
   prunePunchPhotos();
   cleanupPunchPhotosOnce();
   migrateExistingPhotos();
+  await proactiveStorageCheck();
   // Camera via Start Scan button only
   renderTodayLog();setDefaultDates();loadSheetUrl();updateSyncUI();
+}
+async function proactiveStorageCheck(){
+  const mb=getStorageBytes()/1024/1024;
+  if(mb<3.5)return; // healthy, nothing to do
+  console.log('[storage] '+mb.toFixed(2)+' MB used — running proactive cleanup');
+  emergencyCleanupPhotos();
+  // Also re-compress any staff photo that's still large (safety net)
+  const staff=getStaff();let n=0;
+  for(const s of staff){
+    if(s.photo&&s.photo.length>20000){s.photo=await compressPhoto(s.photo,240,0.75);n++;}
+  }
+  if(n)setStaff(staff);
+  const after=getStorageBytes()/1024/1024;
+  if(after>4.3)showToast('⚠️ Storage abhi bhi zyada hai ('+after.toFixed(1)+' MB) — Settings → Optimize Storage check karo');
 }
 
 // ══════════════════════════════════════════════
@@ -1396,26 +1421,40 @@ async function startScanFromButton(){
   scheduleCamIdleStop();
 }
 
-async function startMainCam(){
+let camStarting=false;
+async function startMainCam(retryCount){
+  retryCount=retryCount||0;
+  if(camStarting)return; // lock — prevents concurrent starts (root cause of AbortError)
+  if(mainStream)return; // already running
+  camStarting=true;
   try{
-    mainStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
-    const v=document.getElementById('mainVideo');v.srcObject=mainStream;await v.play();
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
+    const v=document.getElementById('mainVideo');
+    v.srcObject=stream;
+    await v.play();
+    mainStream=stream;
     startScanLoop();
   }catch(e){
+    if(e&&e.name==='AbortError'&&retryCount<2){
+      // Harmless race (another start interrupted this play() request) — silent auto-retry
+      camStarting=false;
+      setTimeout(()=>startMainCam(retryCount+1),300);
+      return;
+    }
     const lbl=document.getElementById('camLabel');
     let msg='Camera error. Retry karo.';
     if(e&&e.name==='NotAllowedError')msg='❌ Camera permission denied. Browser settings mein site ko allow karo, ya address bar mein 🔒 icon dabao → Camera → Allow → refresh.';
     else if(e&&e.name==='NotFoundError')msg='❌ Camera mila nahi. Device par camera hai kya?';
     else if(e&&e.name==='NotReadableError')msg='❌ Camera koi aur app use kar raha hai. WhatsApp/Zoom band karo aur retry.';
     else if(e&&e.name==='OverconstrainedError')msg='❌ Camera resolution issue. Kisi aur browser mein try karo.';
+    else if(e&&e.name==='AbortError')msg='❌ Camera start interrupted. "Start Scan" dobara dabao.';
     else if(e)msg='❌ Camera error: '+e.name+'. Refresh karke retry karo.';
-    lbl.textContent=msg;
+    if(lbl)lbl.textContent=msg;
     console.error('Camera error:',e);
-    // Show retry via Start Scan button again
     const ov=document.getElementById('scanOverlay');if(ov)ov.classList.remove('hidden');
-  }
+  }finally{camStarting=false;}
 }
-function stopMainCam(){if(mainStream){mainStream.getTracks().forEach(t=>t.stop());mainStream=null;}}
+function stopMainCam(){camStarting=false;if(mainStream){mainStream.getTracks().forEach(t=>t.stop());mainStream=null;}}
 async function startRegCam(){
   try{regStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});document.getElementById('regVideo').srcObject=regStream;await document.getElementById('regVideo').play();}catch(e){showToast('Camera error');}
 }
@@ -1606,7 +1645,7 @@ function showWarningPopup(staff,punchType,timeStr,warningType){
 
 function submitWarning(){
   const reason=document.getElementById('wpReason').value.trim();
-  if(!reason){document.getElementById('wpReqMsg').style.display='block';return;}
+  if(!reason){document.getElementById('wpReqMsg').style.display='block';document.getElementById('wpReqMsg').textContent='⚠️ Reason is compulsory.';return;}
   if(!pendingPunchData){closePopup('warningPopup');return;}
   const{staff,punchType,timeStr,warningType}=pendingPunchData;
   const att=getAtt(),todayKey=toKey(new Date());
@@ -1614,7 +1653,10 @@ function submitWarning(){
   if(rec){
     if(warningType==='late'){rec.status='Late';rec.reason=reason;}
     else{rec.earlyOutReason=reason;rec.status=rec.hours<getSettings().halfDay?'Half Day':'Early Out';rec.reason=reason;}
-    if(!setAtt(att)){return;} // Save failed — popup stays open so user can retry
+    if(!setAtt(att)){
+      const m=document.getElementById('wpReqMsg');m.style.display='block';m.textContent='❌ Save fail hua (storage full). Maine auto-cleanup kar diya — "Submit" phir se dabao.';
+      return;
+    }
     syncRecord(rec);
   }
   closePopup('warningPopup');
@@ -1623,13 +1665,14 @@ function submitWarning(){
 
 function submitAbsentReason(){
   const reason=document.getElementById('absentReason').value.trim();
-  if(!reason){document.getElementById('absentReqMsg').style.display='block';return;}
+  if(!reason){document.getElementById('absentReqMsg').style.display='block';document.getElementById('absentReqMsg').textContent='⚠️ Please enter a reason.';return;}
   const yesterday=toKey(new Date(Date.now()-86400000));
   const att=getAtt();
   const staff=getStaff().find(s=>s.id===pendingAbsentId);
   const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===yesterday);
-  if(existing){existing.absentReason=reason;if(!setAtt(att))return;}
-  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});if(!setAtt(att))return;}
+  const failMsg=()=>{const m=document.getElementById('absentReqMsg');m.style.display='block';m.textContent='❌ Save fail hua (storage full). Maine auto-cleanup kar diya — "Submit" phir se dabao.';};
+  if(existing){existing.absentReason=reason;if(!setAtt(att)){failMsg();return;}}
+  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});if(!setAtt(att)){failMsg();return;}}
   closePopup('absentPopup');
   syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,status:'Absent',absentReason:reason,hours:0});
   if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff,pendingPunchData.photo);
@@ -2215,7 +2258,7 @@ function burstConfetti(){
 }
 function getDatesInRange(from,to){const dates=[];let cur=new Date(from+'T00:00:00');const end=new Date(to+'T00:00:00');while(cur<=end){dates.push(toKey(cur));cur=new Date(cur.getTime()+86400000);}return dates;}
 let toastTmr;
-function showToast(msg){clearTimeout(toastTmr);const old=document.querySelector('.toast');if(old)old.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);toastTmr=setTimeout(()=>t.remove(),3000);}
+function showToast(msg,duration){clearTimeout(toastTmr);const old=document.querySelector('.toast');if(old)old.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);toastTmr=setTimeout(()=>t.remove(),duration||3000);}
 
 
 // ═══ MANUAL ENTRY ═══
