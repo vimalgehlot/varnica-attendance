@@ -122,11 +122,11 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 
 /* PUNCH PAGE */
 .punch-scroll{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;align-items:center;}
-.camera-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;transition:max-width 0.3s ease;}
-.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:300px;object-fit:cover;cursor:pointer;transition:max-height 0.3s ease;}
-.camera-card.cam-big{max-width:560px;}
-.camera-card.cam-big video{max-height:65vh;}
-.camera-card.cam-big .face-guide{width:230px;height:275px;}
+.camera-card{width:100%;max-width:480px;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;transition:max-width 0.3s ease;}
+.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:55vh;min-height:320px;object-fit:cover;cursor:pointer;transition:max-height 0.3s ease;}
+.camera-card.cam-big{max-width:680px;}
+.camera-card.cam-big video{max-height:78vh;}
+.camera-card.cam-big .face-guide{width:260px;height:310px;}
 .cam-corners{position:absolute;inset:0;pointer-events:none;}
 .corner{position:absolute;width:28px;height:28px;}
 .corner::before,.corner::after{content:"";position:absolute;background:var(--brand);border-radius:2px;}
@@ -134,7 +134,7 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .corner.tr{top:12px;right:12px;}.corner.tr::before{top:0;right:0;width:100%;height:3px;}.corner.tr::after{top:0;right:0;width:3px;height:100%;}
 .corner.bl{bottom:12px;left:12px;}.corner.bl::before{bottom:0;left:0;width:100%;height:3px;}.corner.bl::after{bottom:0;left:0;width:3px;height:100%;}
 .corner.br{bottom:12px;right:12px;}.corner.br::before{bottom:0;right:0;width:100%;height:3px;}.corner.br::after{bottom:0;right:0;width:3px;height:100%;}
-.face-guide{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:160px;height:190px;border:2px solid rgba(184,149,90,0.5);border-radius:50% 50% 45% 45%;pointer-events:none;transition:border-color 0.3s,box-shadow 0.3s;}
+.face-guide{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:210px;height:250px;border:2px solid rgba(184,149,90,0.5);border-radius:50% 50% 45% 45%;pointer-events:none;transition:border-color 0.3s,box-shadow 0.3s;}
 .face-guide.detected{border-color:var(--green);box-shadow:0 0 24px rgba(74,140,92,0.3);}
 .face-guide.matched{border-color:var(--brand);box-shadow:0 0 32px rgba(184,149,90,0.5);animation:matchPulse 0.8s ease;}
 .face-guide.failed{border-color:var(--red);box-shadow:0 0 24px rgba(196,75,53,0.3);}
@@ -484,7 +484,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div class="face-guide" id="faceGuide"></div>
         <div class="scan-beam"></div>
       </div>
-      <div class="cam-label" id="camLabel">Position your face in the frame · 🔍 Tap video to enlarge</div>
+      <div class="cam-label" id="camLabel">Position your face in the frame · 🔍 Tap for full size</div>
       <div class="scan-overlay" id="scanOverlay">
         <div style="font-size:52px">📷</div>
         <div style="font-weight:800;font-size:17px;color:var(--brand-deep)">Face Scan</div>
@@ -704,7 +704,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="btn btn-outline" onclick="optimizeStorage()" style="margin-top:8px;width:100%">🧹 Optimize Storage (photos compress karo)</button>
       <div style="font-size:11px;color:var(--text3);margin-top:8px">Agar "Quota Exceeded" error aaye ya storage 4 MB+ ho, ye button dabao.</div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
-        <div><div class="set-lbl">📸 Punch Photo Local Save</div><div class="set-sub">OFF = photos sirf VPS cloud pe (recommended, storage safe). ON = photos device pe bhi save (📷 icon se dikhengi).</div></div>
+        <div><div class="set-lbl">📸 Punch Photo (VPS Save)</div><div class="set-sub">ON = har punch ki photo VPS pe safe (device pe nahi). Report tab mein 📷 icon click karke dekh sakte hain. OFF = photos disable.</div></div>
         <label class="switch"><input type="checkbox" id="photoSaveToggle" onchange="togglePhotoSave()"><span class="switch-slider"></span></label>
       </div>
     </div>
@@ -932,6 +932,37 @@ function emergencyCleanupPhotos(){
 function getStorageBytes(){let t=0;for(const k in localStorage){if(localStorage.hasOwnProperty(k))t+=(localStorage[k].length+k.length)*2;}return t;}
 function fmtBytes(b){if(b<1024)return b+' B';if(b<1024*1024)return (b/1024).toFixed(1)+' KB';return (b/1024/1024).toFixed(2)+' MB';}
 // ══════════════════════════════════════════════
+// PUNCH PHOTO — VPS UPLOAD/FETCH
+// ══════════════════════════════════════════════
+function getPunchPhotoUrl(staffId,dateKey,inout){
+  return '/api/punch-photo/'+TOOL_ID+'/'+dateKey+'_'+staffId+'_'+inout+'.jpg';
+}
+async function uploadPunchPhoto(staffId,dateKey,inout,photoData){
+  if(!photoData)return false;
+  try{
+    const filename=dateKey+'_'+staffId+'_'+inout+'.jpg';
+    const res=await fetch('/api/punch-photo',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({bucket:TOOL_ID,id:filename,photo:photoData})
+    });
+    return res.ok;
+  }catch(e){console.warn('Punch photo upload failed:',e);return false;}
+}
+// After successful record save, fire-and-forget upload; mark record when server confirms
+function backgroundUploadPhoto(staff,dateKey,inout,photoData){
+  if(!photoData)return;
+  uploadPunchPhoto(staff.id,dateKey,inout,photoData).then(ok=>{
+    if(!ok)return;
+    const att=getAtt();
+    const r=att.find(a=>a.staffId===staff.id&&a.date===dateKey);
+    if(!r)return;
+    const flagKey=inout==='in'?'hasInPhoto':'hasOutPhoto';
+    if(!r[flagKey]){r[flagKey]=true;setAtt(att);}
+  });
+}
+
+// ══════════════════════════════════════════════
 // PHOTO COMPRESSION (storage optimization)
 // ══════════════════════════════════════════════
 function compressPhoto(dataUrl,maxDim=240,quality=0.75){
@@ -1047,7 +1078,7 @@ const getStaff=()=>DB.get('staff')||[];
 const setStaff=v=>{if(!DB.set('staff',v)){showToast('❌ Staff save FAIL — storage full. Settings → Optimize Storage dabao');return false;}return true;};
 const getAtt=()=>DB.get('att')||[];
 const setAtt=v=>{if(!DB.set('att',v)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao');return false;}return true;};
-const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:false},DB.get('settings')||{});
+const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true},DB.get('settings')||{});
 const setSettings=v=>{if(!DB.set('settings',v)){showToast('❌ Settings save FAIL');return false;}return true;};
 const getPending=()=>DB.get('pending')||[];
 const setPending=v=>DB.set('pending',v);
@@ -1461,24 +1492,25 @@ function doPunch(staff,photo){
   const now=new Date(),todayKey=toKey(now),timeStr=now.toLocaleTimeString('en-IN',{hour12:false});
   const settings=getSettings(),att=getAtt();
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
-  // Default OFF — punch photos NOT saved to localStorage (prevents quota crashes)
-  const savePhotoLocal=settings.localPhotoSave===true;
-  const photoToSave=savePhotoLocal?(photo||''):'';
+  // Photos: VPS pe upload hoti hain (default ON). Local storage pe NAHI (safe).
+  const vpsPhotoEnabled=settings.localPhotoSave!==false; // default ON (renamed semantic)
   if(!rec||!rec.inTime){
     let status,warningType=null;
     const diffMin=timeDiffMin(staff.shiftIn||'09:00',timeStr);
     if(diffMin<=0||diffMin<=settings.grace)status='Present';
     else{status='Late';warningType='late';}
-    if(rec){rec.inTime=timeStr;rec.status=status;rec.method='face';if(savePhotoLocal)rec.inPhoto=photoToSave||rec.inPhoto||'';}
-    else att.push({staffId:staff.id,staffName:staff.name,date:todayKey,inTime:timeStr,outTime:null,status,method:'face',hours:0,reason:'',absentReason:'',inPhoto:photoToSave,outPhoto:''});
-    if(!setAtt(att))return; // save failed — user already notified
+    if(rec){rec.inTime=timeStr;rec.status=status;rec.method='face';}
+    else att.push({staffId:staff.id,staffName:staff.name,date:todayKey,inTime:timeStr,outTime:null,status,method:'face',hours:0,reason:'',absentReason:''});
+    if(!setAtt(att))return;
     const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
+    // Fire-and-forget VPS upload
+    if(vpsPhotoEnabled&&photo)backgroundUploadPhoto(staff,todayKey,'in',photo);
     if(warningType){pendingPunchData={staff,punchType:'IN',timeStr,warningType};showWarningPopup(staff,'IN',timeStr,warningType);}
     else{syncRecord(latest);showWelcomePopup(staff,'IN',timeStr,latest);renderTodayLog();updateDashStats();}
   }else{
     const gapMin=timeDiffMin(rec.inTime,timeStr);
     if(gapMin<2){showToast('✅ Aap already Punch IN ho chuke hain ('+rec.inTime+'). OUT ke liye kam se kam 2 min baad scan karein.');resetStatusCard();return;}
-    pendingOutData={staff,timeStr,todayKey,photo:photoToSave};
+    pendingOutData={staff,timeStr,todayKey,photo};
     showOutConfirmPopup(staff,rec.inTime,timeStr);
   }
 }
@@ -1509,14 +1541,14 @@ function confirmOutPunch(){
   const hrs=timeDiffHours(rec.inTime,timeStr);
   const shiftEnd=staff.shiftOut||'18:00';
   const earlyMin=timeDiffMin(timeStr,shiftEnd);
-  const savePhotoLocal=settings.localPhotoSave===true;
+  const vpsPhotoEnabled=settings.localPhotoSave!==false;
   rec.outTime=timeStr;rec.hours=hrs;
-  if(savePhotoLocal)rec.outPhoto=photo||rec.outPhoto||'';
   if(hrs<settings.halfDay)rec.status='Half Day';
   else if(earlyMin>settings.earlyOut)warningType='early';
   else if(timeDiffMin(shiftEnd,timeStr)>30)rec.status='Overtime';
   if(!setAtt(att))return;
   const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
+  if(vpsPhotoEnabled&&photo)backgroundUploadPhoto(staff,todayKey,'out',photo);
   if(warningType){pendingPunchData={staff,punchType:'OUT',timeStr,warningType};showWarningPopup(staff,'OUT',timeStr,warningType);}
   else{syncRecord(latest);showWelcomePopup(staff,'OUT',timeStr,latest);renderTodayLog();updateDashStats();}
 }
@@ -1747,11 +1779,11 @@ function refreshStorageDisplay(){
   const staff=getStaff();
   sub.textContent=staff.length+' staff · Browser limit ~5 MB'+warn;
   const t=document.getElementById('photoSaveToggle');
-  if(t)t.checked=getSettings().localPhotoSave===true;
+  if(t)t.checked=getSettings().localPhotoSave!==false;
 }
 function togglePhotoSave(){
   const s=getSettings();s.localPhotoSave=document.getElementById('photoSaveToggle').checked;setSettings(s);
-  showToast(s.localPhotoSave?'📸 Punch photos ab device pe bhi save honge (storage jaldi bharega)':'✅ Punch photos sirf VPS cloud pe — device storage safe');
+  showToast(s.localPhotoSave?'📸 Punch photos VPS pe upload hongi (Report mein 📷 icon)':'🚫 Punch photos disable — device aur VPS dono jagah save nahi hongi');
   refreshStorageDisplay();
 }
 async function optimizeStorage(){
@@ -1806,8 +1838,8 @@ function generateReport(){
       const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
       if(isWO||isHol){rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});return;}
       workDays++;const rec=att.find(a=>a.staffId===s.id&&a.date===d);
-      if(!rec||!rec.inTime){absent++;rows.push({date:d,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:''});}
-      else{if(rec.status==='Late')late++;if(rec.status==='Half Day')halfDay++;if(rec.status==='Overtime')overtime++;if(rec.status==='Early Out')earlyOut++;if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;rows.push({date:d,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||''});}
+      if(!rec||!rec.inTime){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
+      else{if(rec.status==='Late')late++;if(rec.status==='Half Day')halfDay++;if(rec.status==='Overtime')overtime++;if(rec.status==='Early Out')earlyOut++;if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;rows.push({date:d,staffId:s.id,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});}
     });
     const settings=getSettings();
     const payableDays=present+halfDay*0.5;
@@ -1843,8 +1875,8 @@ function buildDayWiseData(dates,targetStaff,att){
     const rows=targetStaff.map(s=>{
       if(isWO||isHol)return{staff:s,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''};
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
-      if(!rec||!rec.inTime)return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:''};
-      return{staff:s,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||''};
+      if(!rec||!rec.inTime)return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false};
+      return{staff:s,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
     });
     let present=0,absent=0,late=0,halfDay=0,earlyOut=0,overtime=0;
     if(!isWO&&!isHol){rows.forEach(r=>{if(r.status==='Absent')absent++;else{if(r.status==='Late')late++;if(r.status==='Half Day')halfDay++;if(r.status==='Overtime')overtime++;if(r.status==='Early Out')earlyOut++;if(r.status!=='Half Day')present++;}});}
@@ -1916,7 +1948,7 @@ function renderStaffWiseTable(summaries){
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${escHtml(s.staff.name)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div>${reasonChip}${trendHtml}</div>
       <span class="pct-badge ${pctClass}">${s.pct}%</span>
     </summary>
-    <div class="report-row-body">${payrollHtml}${actionsHtml}${renderMiniTable(s.rows.map(r=>({label:r.date,mono:true,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto})),'Date')}</div></details>`;
+    <div class="report-row-body">${payrollHtml}${actionsHtml}${renderMiniTable(s.rows.map(r=>({label:r.date,mono:true,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto,staffId:s.staff.id,dateKey:r.date,hasInPhoto:r.hasInPhoto,hasOutPhoto:r.hasOutPhoto})),'Date')}</div></details>`;
   }).join('');
 }
 function renderDayWiseTable(dayData){
@@ -1924,11 +1956,11 @@ function renderDayWiseTable(dayData){
   if(!dayData||!dayData.length){el.innerHTML='<div class="empty-state"><p>No data</p></div>';return;}
   el.innerHTML=dayData.map(d=>{
     if(d.isWO||d.isHol){
-      return `<details class="report-row report-row-off"><summary><span class="report-row-chevron">▶</span><div style="flex:1"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${d.isHol?'🎉 Holiday':'🏖️ Week Off'}</div></div></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto})),'Staff')}</div></details>`;
+      return `<details class="report-row report-row-off"><summary><span class="report-row-chevron">▶</span><div style="flex:1"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${d.isHol?'🎉 Holiday':'🏖️ Week Off'}</div></div></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto,staffId:r.staff.id,dateKey:d.date,hasInPhoto:r.hasInPhoto,hasOutPhoto:r.hasOutPhoto})),'Staff')}</div></details>`;
     }
     const pctClass=d.pct>=90?'pct-good':d.pct>=75?'pct-mid':'pct-bad';
     const badges=['✅ '+d.present,'❌ '+d.absent,d.late?'⏰ '+d.late:'',d.earlyOut?'🌅 '+d.earlyOut:'',d.halfDay?'🔶 '+d.halfDay:'',d.overtime?'🔵 '+d.overtime:''].filter(Boolean).join(' · ');
-    return `<details class="report-row"><summary><span class="report-row-chevron">▶</span><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div></div><span class="pct-badge ${pctClass}">${d.pct}%</span></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto})),'Staff')}</div></details>`;
+    return `<details class="report-row"><summary><span class="report-row-chevron">▶</span><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div></div><span class="pct-badge ${pctClass}">${d.pct}%</span></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto,staffId:r.staff.id,dateKey:d.date,hasInPhoto:r.hasInPhoto,hasOutPhoto:r.hasOutPhoto})),'Staff')}</div></details>`;
   }).join('');
 }
 let _photoViewCache=[];
@@ -1938,13 +1970,27 @@ function viewPunchPhoto(idx){
   document.getElementById('photoLightboxImg').src=src;
   openPopup('photoLightbox');
 }
+function showVpsPhoto(staffId,dateKey,inout){
+  const url=getPunchPhotoUrl(staffId,dateKey,inout);
+  const img=document.getElementById('photoLightboxImg');
+  img.src='';img.alt='Loading photo from server...';
+  openPopup('photoLightbox');
+  // Attempt load with error fallback
+  const test=new Image();
+  test.onload=()=>{img.src=url;};
+  test.onerror=()=>{img.alt='';img.src='';showToast('❌ Photo VPS pe nahi mili (upload pending ya delete ho gaya)');};
+  test.src=url;
+}
 function renderMiniTable(rows,firstColLabel){
   _photoViewCache=[];
   return `<table class="mini-table"><thead><tr><th>${firstColLabel}</th><th>Status</th><th>IN</th><th>OUT</th><th>Hrs</th><th>Reason</th></tr></thead><tbody>${rows.map(r=>{
-    const inIdx=stashPhoto(r.inPhoto);
-    const outIdx=stashPhoto(r.outPhoto);
-    const inCell=r.inTime+(inIdx>=0?` <span class="photo-ic" onclick="viewPunchPhoto(${inIdx})">📷</span>`:'');
-    const outCell=r.outTime+(outIdx>=0?` <span class="photo-ic" onclick="viewPunchPhoto(${outIdx})">📷</span>`:'');
+    // Priority: local base64 (legacy) OR VPS flag (new)
+    let inCell=r.inTime;
+    if(r.inPhoto){const inIdx=stashPhoto(r.inPhoto);inCell+=` <span class="photo-ic" onclick="viewPunchPhoto(${inIdx})">📷</span>`;}
+    else if(r.hasInPhoto&&r.staffId&&r.dateKey)inCell+=` <span class="photo-ic" onclick="showVpsPhoto('${r.staffId}','${r.dateKey}','in')">📷</span>`;
+    let outCell=r.outTime;
+    if(r.outPhoto){const outIdx=stashPhoto(r.outPhoto);outCell+=` <span class="photo-ic" onclick="viewPunchPhoto(${outIdx})">📷</span>`;}
+    else if(r.hasOutPhoto&&r.staffId&&r.dateKey)outCell+=` <span class="photo-ic" onclick="showVpsPhoto('${r.staffId}','${r.dateKey}','out')">📷</span>`;
     return `<tr><td${r.mono?' class="mono"':''}>${escHtml(r.label)}</td><td style="font-weight:600;color:${statusColor(r.status)}">${r.status}</td><td class="mono">${inCell}</td><td class="mono">${outCell}</td><td>${r.hours}</td><td class="reason-cell">${escHtml(r.reason)}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
