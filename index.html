@@ -1435,34 +1435,57 @@ async function startScanFromButton(){
 let camStarting=false;
 async function startMainCam(retryCount){
   retryCount=retryCount||0;
-  if(camStarting)return; // lock — prevents concurrent starts (root cause of AbortError)
-  if(mainStream)return; // already running
+  if(camStarting)return;
+  if(mainStream)return;
   camStarting=true;
+  const v=document.getElementById('mainVideo');
   try{
+    // Clean video element state first — critical for iOS Safari
+    if(v){try{v.pause();v.srcObject=null;}catch(_){}}
+    // Small wait to let browser release any pending camera state (iOS needs this)
+    if(retryCount>0)await new Promise(r=>setTimeout(r,600));
     const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
-    const v=document.getElementById('mainVideo');
-    v.srcObject=stream;
-    await v.play();
+    if(v){
+      v.srcObject=stream;
+      // Wait for metadata before play — prevents AbortError on iOS
+      await new Promise((res,rej)=>{
+        let done=false;
+        const ok=()=>{if(done)return;done=true;v.removeEventListener('loadedmetadata',ok);res();};
+        const fail=()=>{if(done)return;done=true;rej(new Error('Video load failed'));};
+        v.addEventListener('loadedmetadata',ok,{once:true});
+        setTimeout(ok,2000); // fallback in case metadata never fires
+        v.addEventListener('error',fail,{once:true});
+      });
+      try{await v.play();}catch(playErr){
+        // play() rejection is often benign on iOS if video is already playing
+        if(playErr&&playErr.name!=='AbortError')throw playErr;
+      }
+    }
     mainStream=stream;
+    const lbl=document.getElementById('camLabel');
+    if(lbl)lbl.textContent='Position your face in the frame · 🔍 Tap for full size';
     startScanLoop();
   }catch(e){
-    if(e&&e.name==='AbortError'&&retryCount<2){
-      // Harmless race (another start interrupted this play() request) — silent auto-retry
+    // Cleanup any partial stream to release camera
+    try{if(v&&v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;}}catch(_){}
+    if(e&&e.name==='AbortError'&&retryCount<3){
       camStarting=false;
-      setTimeout(()=>startMainCam(retryCount+1),300);
+      setTimeout(()=>startMainCam(retryCount+1),1000);
       return;
     }
     const lbl=document.getElementById('camLabel');
     let msg='Camera error. Retry karo.';
-    if(e&&e.name==='NotAllowedError')msg='❌ Camera permission denied. Browser settings mein site ko allow karo, ya address bar mein 🔒 icon dabao → Camera → Allow → refresh.';
+    if(e&&e.name==='NotAllowedError')msg='❌ Camera permission denied. Address bar mein 🔒 icon → Camera → Allow → refresh.';
     else if(e&&e.name==='NotFoundError')msg='❌ Camera mila nahi. Device par camera hai kya?';
-    else if(e&&e.name==='NotReadableError')msg='❌ Camera koi aur app use kar raha hai. WhatsApp/Zoom band karo aur retry.';
-    else if(e&&e.name==='OverconstrainedError')msg='❌ Camera resolution issue. Kisi aur browser mein try karo.';
-    else if(e&&e.name==='AbortError')msg='❌ Camera start interrupted. "Start Scan" dobara dabao.';
-    else if(e)msg='❌ Camera error: '+e.name+'. Refresh karke retry karo.';
+    else if(e&&e.name==='NotReadableError')msg='❌ Camera koi aur app use kar raha hai. Band karke retry.';
+    else if(e&&e.name==='OverconstrainedError')msg='❌ Camera resolution issue.';
+    else if(e&&e.name==='AbortError')msg='❌ Camera start ho nahi paaya. "Start Scan" dobara dabao.';
+    else if(e)msg='❌ '+e.name+'. Retry karo.';
     if(lbl)lbl.textContent=msg;
     console.error('Camera error:',e);
-    const ov=document.getElementById('scanOverlay');if(ov)ov.classList.remove('hidden');
+    // Show scan overlay again so user can retry with a fresh Start Scan tap
+    const ov=document.getElementById('scanOverlay');
+    if(ov)ov.classList.remove('hidden');
   }finally{camStarting=false;}
 }
 function stopMainCam(){camStarting=false;if(mainStream){mainStream.getTracks().forEach(t=>t.stop());mainStream=null;}}
@@ -2257,7 +2280,7 @@ function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>
 // ══════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════
-function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(id==='punchPage'){document.querySelector('.nav-btn').classList.add('active');if(!mainStream)startMainCam();}}
+function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(id==='punchPage'){document.querySelector('.nav-btn').classList.add('active');const ov=document.getElementById('scanOverlay');if(ov&&!mainStream)ov.classList.remove('hidden');}}
 function goAdmin(){curPin='';document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));document.getElementById('pinError').textContent='';document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('adminLoginPage').classList.add('active');}
 function adminLogout(){showPage('punchPage');}
 function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){populateManStaff();const md=document.getElementById('manDate');if(md&&!md.value)md.value=toKey(new Date());}}
