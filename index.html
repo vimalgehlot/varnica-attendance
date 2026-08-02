@@ -281,6 +281,7 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .pct-badge{font-size:11px;font-weight:800;padding:4px 9px;border-radius:9px;flex-shrink:0;}
 .pct-good{background:var(--green-bg);color:var(--green);}
 .pct-mid{background:var(--orange-bg);color:var(--orange);}
+.pct-low{background:rgba(196,75,53,0.12);color:var(--red);}
 .pct-bad{background:var(--red-bg);color:var(--red);}
 .report-row-body{padding:0 12px 12px;border-top:1px solid var(--blush2);}
 .row-reason{font-size:10.5px;color:var(--orange);font-style:italic;margin-top:2px;display:flex;align-items:center;gap:4px;}
@@ -637,6 +638,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="report-toggle">
       <button class="rtbtn active" id="viewStaffBtn" onclick="setReportView('staff')">👤 Staff-wise</button>
       <button class="rtbtn" id="viewDayBtn" onclick="setReportView('day')">📅 Day-wise</button>
+      <button class="rtbtn" id="viewMatrixBtn" onclick="setReportView('matrix')">📊 Matrix</button>
     </div>
     <div class="report-sticky" id="reportSticky" style="display:none">
       <div class="rs-item"><div class="rs-val" id="rsPct">–</div><div class="rs-lbl">Team Attendance</div></div>
@@ -736,6 +738,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="card">
       <div class="sec-title">☁️ Cloud Backup <span id="cloudBackupDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text3);margin-left:4px"></span></div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Har save (Staff/Attendance/Settings) automatically VPS ke apne server par bhi backup ho jata hai — Google Sheets se alag, poori tarah aapke control mein. Dot green = last backup successful.</div>
+      <button class="btn btn-outline" onclick="pushAllToCloud()" style="margin-bottom:8px">📤 Push to Cloud (is device ka data upload)</button>
       <button class="btn btn-outline" onclick="restoreFromCloud()">📥 Restore from Cloud</button>
       <div style="font-size:10.5px;color:var(--text3);margin-top:6px">Naya tablet setup karte waqt use karo — poora data automatically wapas aa jayega.</div>
     </div>
@@ -1037,6 +1040,40 @@ function cloudBackupSync(key,value){
       .then(r=>{document.getElementById('cloudBackupDot')&&(document.getElementById('cloudBackupDot').style.background=r.ok?'var(--green)':'var(--red)');})
       .catch(()=>{document.getElementById('cloudBackupDot')&&(document.getElementById('cloudBackupDot').style.background='var(--red)');});
   },800);
+}
+async function pushAllToCloud(){
+  if(!confirm('Is device ka Staff + Attendance + Settings VPS cloud pe upload hoga (baaki devices ke records ke saath safely merge karke). Aage badhein?'))return;
+  try{
+    showToast('📤 Cloud pe bhej rahe hain...',4000);
+    // First pull VPS copy and merge, so we never wipe another device's punches
+    let cloudAtt=[];
+    try{
+      const res=await fetch('/api/restore?bucket='+TOOL_ID);
+      const json=await res.json();
+      if(json.ok&&json.data&&json.data.att)cloudAtt=json.data.att;
+    }catch(e){}
+    const localAtt=getAtt();
+    const merged=[...cloudAtt];
+    localAtt.forEach(la=>{
+      const idx=merged.findIndex(ca=>ca.staffId===la.staffId&&ca.date===la.date);
+      if(idx===-1)merged.push(la);
+      else{
+        const laScore=(la.outTime?2:0)+(la.inTime?1:0);
+        const caScore=(merged[idx].outTime?2:0)+(merged[idx].inTime?1:0);
+        if(laScore>=caScore)merged[idx]=la;
+      }
+    });
+    setAtt(merged);
+    // Now force-push all three keys immediately (no debounce)
+    const push=(key,value)=>fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,key,value})});
+    await Promise.all([
+      push('att',merged),
+      push('staff',getStaff()),
+      push('settings',getSettings())
+    ]);
+    renderTodayLog();updateDashStats();
+    showToast('✅ Cloud pe upload ho gaya! Ab baaki devices pe Refresh dabao.',6000);
+  }catch(e){showToast('❌ Push failed: '+e.message,6000);}
 }
 async function restoreFromCloud(){
   if(!confirm('Ye VPS ke cloud backup se poora data (Staff + Attendance + Settings) laayega aur is device ka current data replace karega.\n\nAage badhein?'))return;
@@ -2096,6 +2133,7 @@ function setReportView(mode){
   reportViewMode=mode;
   document.getElementById('viewStaffBtn').classList.toggle('active',mode==='staff');
   document.getElementById('viewDayBtn').classList.toggle('active',mode==='day');
+  document.getElementById('viewMatrixBtn').classList.toggle('active',mode==='matrix');
   renderReportTable();
 }
 function quickFilterReport(range){
@@ -2118,7 +2156,98 @@ function renderHighlights(summaries){
 }
 function renderReportTable(){
   if(reportViewMode==='day')renderDayWiseTable(lastDayWiseData);
+  else if(reportViewMode==='matrix')renderMatrixTable(lastReportData);
   else renderStaffWiseTable(lastReportData);
+}
+function matrixCellInfo(status){
+  // returns [letter, bgColor, textColor]
+  if(status==='Present')return['P','rgba(74,143,74,0.15)','var(--green)'];
+  if(status==='Overtime')return['O','rgba(74,143,74,0.25)','var(--green)'];
+  if(status==='Late')return['L','rgba(214,143,60,0.18)','var(--orange)'];
+  if(status==='Half Day')return['H','rgba(214,143,60,0.14)','var(--orange)'];
+  if(status==='Early Out')return['E','rgba(214,143,60,0.18)','var(--orange)'];
+  if(status==='Absent')return['A','rgba(196,75,53,0.15)','var(--red)'];
+  if(status==='Holiday')return['★','rgba(150,120,200,0.12)','#8666c8'];
+  if(status==='Week Off')return['—','rgba(0,0,0,0.05)','var(--text3)'];
+  return['·','transparent','var(--text3)'];
+}
+function renderMatrixTable(summaries){
+  const el=document.getElementById('reportTable');
+  if(!summaries.length){el.innerHTML='<div class="empty-state"><p>No data</p></div>';return;}
+  const dates=summaries[0].rows.map(r=>r.date);
+  // Legend
+  const legend=`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:11px">
+    <span style="color:var(--green)">P=Present</span><span style="color:var(--orange)">L=Late</span>
+    <span style="color:var(--orange)">H=Half</span><span style="color:var(--orange)">E=Early</span>
+    <span style="color:var(--green)">O=OT</span><span style="color:var(--red)">A=Absent</span>
+    <span style="color:#8666c8">★=Holiday</span><span style="color:var(--text3)">—=WeekOff</span>
+  </div>`;
+  // Header row: staff name column + one column per date
+  const headCols=dates.map(d=>{
+    const dt=new Date(d+'T00:00:00');
+    const dd=String(dt.getDate()).padStart(2,'0');
+    const wd=dt.toLocaleDateString('en-IN',{weekday:'narrow'});
+    return `<th style="min-width:34px;text-align:center;padding:4px 2px;font-size:10px;font-weight:700;color:var(--text2)"><div>${dd}</div><div style="font-size:8px;color:var(--text3);font-weight:400">${wd}</div></th>`;
+  }).join('');
+  // Each staff = one collapsible block: summary row shows the matrix strip, expand shows details
+  const bodyRows=summaries.map(s=>{
+    const cells=s.rows.map(r=>{
+      const[letter,bg,color]=matrixCellInfo(r.status);
+      return `<td style="text-align:center;padding:3px 2px;background:${bg};color:${color};font-weight:700;font-size:11px;border:1px solid rgba(0,0,0,0.03)">${letter}</td>`;
+    }).join('');
+    const totals=`P:${s.present} L:${s.late} H:${s.halfDay} A:${s.absent}`;
+    // Detail rows (only days with something notable: not plain week-off)
+    const detailRows=s.rows.filter(r=>r.status!=='Week Off').map(r=>{
+      const[letter,bg,color]=matrixCellInfo(r.status);
+      const reasonTxt=r.reason?`<span style="color:var(--text3)">— ${escHtml(r.reason)}</span>`:'';
+      return `<tr>
+        <td class="mono" style="padding:4px 8px;white-space:nowrap">${fmtDateLabel(r.date)}</td>
+        <td style="padding:4px 8px;font-weight:600;color:${color}">${r.status}</td>
+        <td class="mono" style="padding:4px 8px">${r.inTime}</td>
+        <td class="mono" style="padding:4px 8px">${r.outTime}</td>
+        <td style="padding:4px 8px;font-size:11px">${reasonTxt}</td>
+      </tr>`;
+    }).join('');
+    const thumb=s.staff.photo?`<img src="${s.staff.photo}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0">`:`<div style="width:26px;height:26px;border-radius:50%;background:var(--blush2);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">👤</div>`;
+    return `<details class="report-row" style="margin-bottom:6px">
+      <summary style="display:flex;align-items:center;gap:8px;padding:8px;cursor:pointer">
+        <span class="report-row-chevron">▶</span>${thumb}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(s.staff.name)}</div>
+          <div style="font-size:10px;color:var(--text3)">${totals}</div>
+        </div>
+        <span class="pct-badge ${s.pct>=90?'pct-good':s.pct>=70?'pct-mid':'pct-low'}">${s.pct}%</span>
+      </summary>
+      <div class="report-row-body" style="padding:8px">
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+          <table style="border-collapse:collapse;font-size:12px;width:100%">
+            <thead><tr style="border-bottom:2px solid var(--blush2)">
+              <th style="text-align:left;padding:4px 8px">Date</th><th style="text-align:left;padding:4px 8px">Status</th>
+              <th style="text-align:left;padding:4px 8px">IN</th><th style="text-align:left;padding:4px 8px">OUT</th>
+              <th style="text-align:left;padding:4px 8px">Reason</th>
+            </tr></thead>
+            <tbody>${detailRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </details>`;
+  }).join('');
+  // Top overview matrix (all staff × all dates, compact) + collapsible detail blocks below
+  el.innerHTML=legend+
+    `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:16px;border:1px solid var(--blush2);border-radius:10px">
+      <table style="border-collapse:collapse;font-size:11px;width:100%">
+        <thead><tr style="background:var(--blush1)">
+          <th style="position:sticky;left:0;background:var(--blush1);text-align:left;padding:6px 8px;min-width:110px;z-index:2">Staff</th>
+          ${headCols}
+        </tr></thead>
+        <tbody>${summaries.map(s=>{
+          const cells=s.rows.map(r=>{const[letter,bg,color]=matrixCellInfo(r.status);return `<td style="text-align:center;padding:3px 2px;background:${bg};color:${color};font-weight:700;font-size:11px;border:1px solid rgba(0,0,0,0.03)">${letter}</td>`;}).join('');
+          return `<tr><td style="position:sticky;left:0;background:var(--surface);padding:5px 8px;font-weight:600;font-size:11px;white-space:nowrap;border-right:1px solid var(--blush2);z-index:1">${escHtml(s.staff.name)}</td>${cells}</tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+    <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:8px">📋 Tap any staff for day-by-day detail:</div>
+    ${bodyRows}`;
 }
 function renderStaffWiseTable(summaries){
   const el=document.getElementById('reportTable');
