@@ -122,11 +122,11 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 
 /* PUNCH PAGE */
 .punch-scroll{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;align-items:center;}
-.camera-card{width:100%;max-width:480px;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;transition:max-width 0.3s ease;}
-.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:55vh;min-height:320px;object-fit:cover;cursor:pointer;transition:max-height 0.3s ease;}
-.camera-card.cam-big{max-width:680px;}
-.camera-card.cam-big video{max-height:78vh;}
-.camera-card.cam-big .face-guide{width:260px;height:310px;}
+.camera-card{width:100%;max-width:480px;min-height:400px;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;transition:max-width 0.3s ease;}
+.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:60vh;min-height:400px;object-fit:cover;cursor:pointer;transition:max-height 0.3s ease;}
+.camera-card.cam-big{max-width:720px;}
+.camera-card.cam-big video{max-height:80vh;}
+.camera-card.cam-big .face-guide{width:270px;height:320px;}
 .cam-corners{position:absolute;inset:0;pointer-events:none;}
 .corner{position:absolute;width:28px;height:28px;}
 .corner::before,.corner::after{content:"";position:absolute;background:var(--brand);border-radius:2px;}
@@ -388,11 +388,11 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
 
 
 /* ── SCAN OVERLAY ── */
-.scan-overlay{position:absolute;inset:0;background:rgba(248,238,232,0.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;border-radius:20px;z-index:10;backdrop-filter:blur(4px);}
+.scan-overlay{position:absolute;inset:0;background:rgba(248,238,232,0.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:20px;z-index:10;backdrop-filter:blur(4px);cursor:pointer;overflow:auto;padding:14px;}
 .scan-overlay.hidden{display:none;}
-.scan-start-btn{background:linear-gradient(135deg,var(--brand-light),var(--brand-dark));color:#fff;border:none;border-radius:14px;padding:14px 36px;font-size:17px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:10px;box-shadow:-1px -1px 0 rgba(255,220,140,0.4),2px 3px 0 rgba(70,25,0,0.35),0 6px 18px rgba(184,149,90,0.45);letter-spacing:1px;transition:all .15s;}
+.scan-start-btn{background:linear-gradient(135deg,var(--brand-light),var(--brand-dark));color:#fff;border:none;border-radius:14px;padding:16px 40px;font-size:18px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:10px;box-shadow:-1px -1px 0 rgba(255,220,140,0.4),2px 3px 0 rgba(70,25,0,0.35),0 6px 18px rgba(184,149,90,0.45);letter-spacing:1px;transition:all .15s;flex-shrink:0;}
 .scan-start-btn:active{transform:translate(1px,1px);}
-.scan-hint{font-size:12px;color:var(--text3);text-align:center;max-width:220px;line-height:1.6;}
+.scan-hint{font-size:12px;color:var(--text3);text-align:center;max-width:260px;line-height:1.5;}
 /* ── STICKY HEADER ── */
 .header{position:sticky;top:0;z-index:100;}
 .admin-tabs{position:sticky;top:60px;z-index:99;}
@@ -488,11 +488,11 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div class="scan-beam"></div>
       </div>
       <div class="cam-label" id="camLabel">Position your face in the frame · 🔍 Tap for full size</div>
-      <div class="scan-overlay" id="scanOverlay">
-        <div style="font-size:52px">📷</div>
+      <div class="scan-overlay" id="scanOverlay" onclick="startScanFromButton()">
+        <div style="font-size:44px">📷</div>
         <div style="font-weight:800;font-size:17px;color:var(--brand-deep)">Face Scan</div>
-        <div class="scan-hint">Attendance punch ke liye<br>button dabao.</div>
-        <button class="scan-start-btn" onclick="startScanFromButton()">▶ &nbsp;Start Scan</button>
+        <div class="scan-hint">Punch ke liye yahan<br><b>kahin bhi tap karo</b> 👇</div>
+        <button class="scan-start-btn">▶ &nbsp;Start Scan</button>
       </div>
     </div>
     <div class="status-card" id="statusCard">
