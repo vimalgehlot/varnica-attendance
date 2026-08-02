@@ -1428,8 +1428,10 @@ function scheduleCamIdleStop(){
 async function startScanFromButton(){
   const ov=document.getElementById('scanOverlay');
   if(ov)ov.classList.add('hidden');
+  const lbl=document.getElementById('camLabel');
+  if(lbl)lbl.textContent='Camera shuru ho raha hai...';
   await startMainCam();
-  scheduleCamIdleStop();
+  if(isStreamHealthy())scheduleCamIdleStop();
 }
 
 function isStreamHealthy(){
@@ -1515,12 +1517,12 @@ async function startMainCam(retryCount){
   }finally{camStarting=false;}
 }
 function stopMainCam(){camStarting=false;stopScanLoop();if(mainStream){mainStream.getTracks().forEach(t=>t.stop());mainStream=null;}}
-// ── iOS kiosk recovery: app wake/foreground → verify camera, reset if OS killed it ──
+// ── iOS kiosk recovery: app wake/foreground → verify camera ONLY (never touches attendance data) ──
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){
     if(mainStream&&!isStreamHealthy())handleStreamDeath();
+    renderTodayLog(); // re-render from local (never re-pulls cloud — prevents record wipe)
   }else{
-    // Going to background — proactively release camera (iOS will kill it anyway)
     if(mainStream)handleStreamDeath();
   }
 });
@@ -1539,14 +1541,20 @@ function stopRegCam(){if(regStream){regStream.getTracks().forEach(t=>t.stop());r
 let scanLoopGen=0; // only the newest loop stays alive
 function stopScanLoop(){scanLoopGen++;}
 async function startScanLoop(){
-  if(!faceLoaded)return;
+  if(!faceLoaded){
+    const lbl=document.getElementById('camLabel');
+    if(lbl)lbl.textContent='⚠️ Face AI abhi load nahi hua. Refresh karo.';
+    return;
+  }
+  // Ensure matcher is fresh (staff may have been added since last build)
+  if(!faceMatcher){await buildMatcher();}
   const myGen=++scanLoopGen; // any older loop will now exit on its next tick
   const video=document.getElementById('mainVideo'),guide=document.getElementById('faceGuide'),label=document.getElementById('camLabel');
   const loop=async()=>{
     if(myGen!==scanLoopGen)return;              // a newer loop took over — this one dies
     if(!mainStream){return;}                     // camera stopped — stop looping entirely
     if(!isStreamHealthy()){handleStreamDeath();return;}
-    if(video.readyState===4&&!cooldown){
+    if(video.readyState>=2&&video.videoWidth>0&&!cooldown){
       try{
         const det=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.5})).withFaceLandmarks().withFaceDescriptor();
         if(myGen!==scanLoopGen)return;
@@ -1601,7 +1609,7 @@ async function handlePunch(staff,photo){
     document.getElementById('absentMsg').textContent=staff.name+', you were absent on '+yesterday+'. Please provide a reason.';
     document.getElementById('absentReason').value='';document.getElementById('absentReqMsg').style.display='none';
     pendingPunchData={staff,photo};openPopup('absentPopup');
-    setTimeout(()=>{const ta=document.getElementById('absentReason');if(ta){ta.focus();ta.click();}},400);
+    setTimeout(()=>{const ta=document.getElementById('absentReason');if(ta)ta.focus();},500);
     return;
   }
   doPunch(staff,photo);
@@ -1729,7 +1737,7 @@ function showWarningPopup(staff,punchType,timeStr,warningType){
     document.getElementById('wpMsg').textContent='Leaving before shift end ('+(staff.shiftOut||'18:00')+'). Please provide reason.';
   }
   openPopup('warningPopup');
-  setTimeout(()=>{const ta=document.getElementById('wpReason');if(ta){ta.focus();ta.click();}},400);
+  setTimeout(()=>{const ta=document.getElementById('wpReason');if(ta)ta.focus();},500);
 }
 
 function submitWarning(){
@@ -2340,8 +2348,17 @@ function showAdminPanel(){document.querySelectorAll('.page').forEach(p=>p.classL
 // MODAL/POPUP
 function openModal(id){document.getElementById(id).classList.add('active');}
 function closeModal(id){document.getElementById(id).classList.remove('active');if(id==='staffModal')stopRegCam();}
-function openPopup(id){document.getElementById(id).classList.add('active');}
-function closePopup(id){document.getElementById(id).classList.remove('active');}
+const INPUT_POPUPS=['warningPopup','absentPopup'];
+function openPopup(id){
+  document.getElementById(id).classList.add('active');
+  // Pause face-scanning while a reason-input popup is open (prevents focus theft / typing loss)
+  if(INPUT_POPUPS.includes(id))stopScanLoop();
+}
+function closePopup(id){
+  document.getElementById(id).classList.remove('active');
+  // Resume scanning after a reason popup closes, if camera is still live
+  if(INPUT_POPUPS.includes(id)&&isStreamHealthy())startScanLoop();
+}
 function resetStatusCard(){const c=document.getElementById('statusCard');c.className='status-card';c.innerHTML='<div class="status-icon">👤</div><div style="font-size:14px;color:var(--text2)">Waiting for face scan...</div><div style="font-size:11px;color:var(--text3)">Look directly at the camera</div>';}
 
 // EXPORT
