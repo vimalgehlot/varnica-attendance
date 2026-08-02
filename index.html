@@ -1028,11 +1028,11 @@ function cleanupPunchPhotosOnce(){
   DB.set('punchPhotosCleanedV1',true);
 }
 
-let cloudBackupTimer=null;
+const cloudBackupTimers={};
 function cloudBackupSync(key,value){
-  // debounce so rapid successive saves don't fire a flood of requests
-  clearTimeout(cloudBackupTimer);
-  cloudBackupTimer=setTimeout(()=>{
+  // Per-key debounce — different keys must NOT cancel each other (was causing attendance loss)
+  clearTimeout(cloudBackupTimers[key]);
+  cloudBackupTimers[key]=setTimeout(()=>{
     fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,key,value})})
       .then(r=>{document.getElementById('cloudBackupDot')&&(document.getElementById('cloudBackupDot').style.background=r.ok?'var(--green)':'var(--red)');})
       .catch(()=>{document.getElementById('cloudBackupDot')&&(document.getElementById('cloudBackupDot').style.background='var(--red)');});
