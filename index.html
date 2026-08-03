@@ -576,13 +576,15 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
           <option value="half_day">🔶 Half Day</option>
         </select></div></div>
       <div id="manTimeRow" style="display:none" class="manual-irow">
-        <div><label class="il">IN Time</label><input type="time" class="if" id="manInTime"></div>
-        <div><label class="il">OUT Time</label><input type="time" class="if" id="manOutTime"></div></div>
+        <div><label class="il">IN Time</label><div style="display:flex;gap:6px"><input type="time" class="if" id="manInTime" style="flex:1"><button type="button" class="btn btn-outline" onclick="document.getElementById('manInTime').value=''" style="width:auto;padding:0 12px" title="IN Time clear karo">✖</button></div></div>
+        <div><label class="il">OUT Time</label><div style="display:flex;gap:6px"><input type="time" class="if" id="manOutTime" style="flex:1"><button type="button" class="btn btn-outline" onclick="document.getElementById('manOutTime').value=''" style="width:auto;padding:0 12px" title="OUT Time clear karo">✖</button></div></div></div>
       <div id="manReasonRow" style="display:none;margin-bottom:10px">
         <label class="il">Reason <span style="color:var(--red)">*</span></label>
         <input type="text" class="if" id="manReason" placeholder="Reason likhna zaroori hai..."></div>
       <div id="manCurRec" style="display:none;padding:10px;background:var(--blush2);border-radius:10px;font-size:12px;margin-bottom:12px">
-        <b>Current:</b> <span id="manCurText"></span></div>
+        <b>Current:</b> <span id="manCurText"></span>
+        <button type="button" id="undoOutBtn" onclick="undoOutPunch()" style="display:none;margin-top:8px;width:100%;background:var(--orange);color:#fff;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer">🔓 Galti se OUT hua tha? Ek tap mein wapas IN karo</button>
+      </div>
       <div id="manErrMsg" style="display:none;color:var(--red);font-size:12px;margin-bottom:8px">⚠️ Reason zaroori hai</div>
       <button class="btn btn-primary" onclick="saveManEntry()">💾 Save Entry</button>
       <button class="btn btn-outline" onclick="delManEntry()" style="margin-top:8px">🗑️ Record Delete karo</button>
@@ -639,6 +641,9 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="rtbtn active" id="viewStaffBtn" onclick="setReportView('staff')">👤 Staff-wise</button>
       <button class="rtbtn" id="viewDayBtn" onclick="setReportView('day')">📅 Day-wise</button>
       <button class="rtbtn" id="viewMatrixBtn" onclick="setReportView('matrix')">📊 Matrix</button>
+    </div>
+    <div style="text-align:right;margin-bottom:8px">
+      <button class="btn btn-outline" id="expandAllBtn" onclick="toggleAllReportRows()" style="padding:6px 14px;font-size:12px;width:auto">🔽 Sab Expand Karo</button>
     </div>
     <div class="report-sticky" id="reportSticky" style="display:none">
       <div class="rs-item"><div class="rs-val" id="rsPct">–</div><div class="rs-lbl">Team Attendance</div></div>
@@ -2064,30 +2069,42 @@ function generateReport(){
   const prevDates=getDatesInRange(toKey(prevFrom),toKey(prevTo));
   const target=sf?staff.filter(s=>s.id===sf):staff;const summaries=[];
   target.forEach(s=>{
-    let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0;const rows=[];
+    let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0,extraDays=0;const rows=[];
     dates.forEach(d=>{
       const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
-      if(isWO||isHol){rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});return;}
-      workDays++;const rec=att.find(a=>a.staffId===s.id&&a.date===d);
+      const rec=att.find(a=>a.staffId===s.id&&a.date===d);
+      if(isWO||isHol){
+        if(rec&&rec.inTime){
+          // Staff worked on their week-off/holiday — count as EXTRA day (bonus pay), not a normal work day
+          extraDays++;
+          rows.push({date:d,staffId:s.id,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+        }else{
+          rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});
+        }
+        return;
+      }
+      workDays++;
       if(!rec||!rec.inTime){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
       else{if(rec.status==='Late')late++;if(rec.status==='Half Day')halfDay++;if(rec.status==='Overtime')overtime++;if(rec.status==='Early Out')earlyOut++;if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;rows.push({date:d,staffId:s.id,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});}
     });
     const settings=getSettings();
     const payableDays=present+halfDay*0.5;
     const perDaySalary=(s.salary&&workDays>0)?s.salary/workDays:0;
-    const grossEarned=perDaySalary*payableDays;
+    const extraPay=Math.round(perDaySalary*extraDays);
+    const grossEarned=perDaySalary*payableDays+extraPay;
     const pfOn=s.pf!==0;const esiOn=s.esi!==0&&s.salary&&s.salary<=settings.esiCeiling;
     const pfAmount=pfOn?Math.round(grossEarned*settings.pfRate/100):0;
     const esiAmount=esiOn?Math.round(grossEarned*settings.esiRate/100):0;
     const netPay=Math.round(grossEarned-pfAmount-esiAmount);
     const prevPct=computeQuickPct(s.id,prevDates,att);
-    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,perDaySalary,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,prevPct});
+    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,extraDays,extraPay,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,perDaySalary,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,prevPct});
   });
   lastReportData=summaries;
   lastDayWiseData=buildDayWiseData(dates,target,att);
   renderStickyBar(summaries);
   renderHighlights(summaries);
   renderReportTable();
+  const btn=document.getElementById('expandAllBtn');if(btn)btn.textContent='🔽 Sab Expand Karo';
 }
 function computeQuickPct(staffId,dates,att){
   let present=0,workDays=0;
@@ -2104,15 +2121,19 @@ function buildDayWiseData(dates,targetStaff,att){
   return dates.map(d=>{
     const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
     const rows=targetStaff.map(s=>{
-      if(isWO||isHol)return{staff:s,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''};
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
+      if(isWO||isHol){
+        if(rec&&rec.inTime)return{staff:s,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
+        return{staff:s,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''};
+      }
       if(!rec||!rec.inTime)return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false};
       return{staff:s,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
     });
-    let present=0,absent=0,late=0,halfDay=0,earlyOut=0,overtime=0;
+    let present=0,absent=0,late=0,halfDay=0,earlyOut=0,overtime=0,extraDays=0;
     if(!isWO&&!isHol){rows.forEach(r=>{if(r.status==='Absent')absent++;else{if(r.status==='Late')late++;if(r.status==='Half Day')halfDay++;if(r.status==='Overtime')overtime++;if(r.status==='Early Out')earlyOut++;if(r.status!=='Half Day')present++;}});}
+    else{rows.forEach(r=>{if(r.status==='Extra Day')extraDays++;});}
     const totalStaff=targetStaff.length;
-    return{date:d,isWO,isHol,rows,present,absent,late,halfDay,earlyOut,overtime,totalStaff,pct:totalStaff>0?Math.round(present/totalStaff*100):0};
+    return{date:d,isWO,isHol,rows,present,absent,late,halfDay,earlyOut,overtime,extraDays,totalStaff,pct:totalStaff>0?Math.round(present/totalStaff*100):0};
   });
 }
 function renderStickyBar(summaries){
@@ -2135,6 +2156,7 @@ function setReportView(mode){
   document.getElementById('viewDayBtn').classList.toggle('active',mode==='day');
   document.getElementById('viewMatrixBtn').classList.toggle('active',mode==='matrix');
   renderReportTable();
+  const btn=document.getElementById('expandAllBtn');if(btn)btn.textContent='🔽 Sab Expand Karo';
 }
 function quickFilterReport(range){
   const today=new Date();let from,to=toKey(today);
@@ -2147,12 +2169,20 @@ function quickFilterReport(range){
 }
 function escHtml(s){return(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtDateLabel(d){const dt=new Date(d+'T00:00:00');return dt.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short'});}
-function statusColor(status){return status==='Absent'?'var(--red)':(status==='Late'||status==='Early Out')?'var(--orange)':(status==='Present'||status==='Overtime')?'var(--green)':'var(--text2)';}
+function statusColor(status){return status==='Absent'?'var(--red)':(status==='Late'||status==='Early Out')?'var(--orange)':status==='Extra Day'?'#b8955a':(status==='Present'||status==='Overtime')?'var(--green)':'var(--text2)';}
 function renderHighlights(summaries){
   const el=document.getElementById('reportHighlights');
   const flagged=summaries.filter(s=>(s.workDays>0&&s.absent/s.workDays>0.2)||s.late>=3||s.earlyOut>=3);
   if(!flagged.length){el.innerHTML='';return;}
   el.innerHTML='<div class="card" style="border-color:rgba(196,75,53,0.2)"><div class="sec-title" style="color:var(--red)">🚨 Attention Required</div>'+flagged.map(s=>{const tags=[];if(s.workDays>0&&s.absent/s.workDays>0.2)tags.push('<span class="htag htag-abs">Absent '+s.absent+' days</span>');if(s.late>=3)tags.push('<span class="htag htag-late">Late '+s.late+'x</span>');if(s.earlyOut>=3)tags.push('<span class="htag htag-early">Early Out '+s.earlyOut+'x</span>');return '<div class="highlight-card"><div class="highlight-name">⚠️ '+s.staff.name+'</div><div class="highlight-tags">'+tags.join('')+'</div></div>';}).join('')+'</div>';
+}
+function toggleAllReportRows(){
+  const rows=document.querySelectorAll('#reportTable details.report-row');
+  if(!rows.length){showToast('Pehle report generate karo');return;}
+  const anyClosed=Array.from(rows).some(r=>!r.open);
+  rows.forEach(r=>r.open=anyClosed);
+  const btn=document.getElementById('expandAllBtn');
+  if(btn)btn.textContent=anyClosed?'🔼 Sab Collapse Karo':'🔽 Sab Expand Karo';
 }
 function renderReportTable(){
   if(reportViewMode==='day')renderDayWiseTable(lastDayWiseData);
@@ -2167,6 +2197,7 @@ function matrixCellInfo(status){
   if(status==='Half Day')return['H','rgba(214,143,60,0.14)','var(--orange)'];
   if(status==='Early Out')return['E','rgba(214,143,60,0.18)','var(--orange)'];
   if(status==='Absent')return['A','rgba(196,75,53,0.15)','var(--red)'];
+  if(status==='Extra Day')return['➕','rgba(184,149,90,0.20)','#b8955a'];
   if(status==='Holiday')return['★','rgba(150,120,200,0.12)','#8666c8'];
   if(status==='Week Off')return['—','rgba(0,0,0,0.05)','var(--text3)'];
   return['·','transparent','var(--text3)'];
@@ -2180,6 +2211,7 @@ function renderMatrixTable(summaries){
     <span style="color:var(--green)">P=Present</span><span style="color:var(--orange)">L=Late</span>
     <span style="color:var(--orange)">H=Half</span><span style="color:var(--orange)">E=Early</span>
     <span style="color:var(--green)">O=OT</span><span style="color:var(--red)">A=Absent</span>
+    <span style="color:#b8955a">➕=Extra(worked off-day)</span>
     <span style="color:#8666c8">★=Holiday</span><span style="color:var(--text3)">—=WeekOff</span>
   </div>`;
   // Header row: staff name column + one column per date
@@ -2264,7 +2296,7 @@ function renderStaffWiseTable(summaries){
       else if(diff<0)trendHtml=`<span class="trend-down">▼ ${Math.abs(diff)}% vs last period</span>`;
       else trendHtml=`<span class="trend-flat">= same as last period</span>`;
     }
-    const payrollHtml=s.staff.salary?`<div class="row-payroll"><span class="htag" style="background:var(--blush2)">📅 ${s.payableDays}/${s.workDays}d</span><span class="htag" style="background:var(--blush2)">Gross ₹${s.grossEarned.toLocaleString('en-IN')}</span>${s.pfOn?'<span class="htag" style="background:var(--blush2)">PF −₹'+s.pfAmount.toLocaleString('en-IN')+'</span>':''}${s.esiOn?'<span class="htag" style="background:var(--blush2)">ESI −₹'+s.esiAmount.toLocaleString('en-IN')+'</span>':''}<span class="htag" style="background:var(--green);color:#fff;font-weight:700">Net ₹${s.netPay.toLocaleString('en-IN')}</span></div>`:'';
+    const payrollHtml=s.staff.salary?`<div class="row-payroll"><span class="htag" style="background:var(--blush2)">📅 ${s.payableDays}/${s.workDays}d</span>${s.extraDays?'<span class="htag" style="background:rgba(184,149,90,0.2);color:#b8955a;font-weight:700">➕ '+s.extraDays+' extra day'+(s.extraDays>1?'s':'')+' (+₹'+s.extraPay.toLocaleString('en-IN')+')</span>':''}<span class="htag" style="background:var(--blush2)">Gross ₹${s.grossEarned.toLocaleString('en-IN')}</span>${s.pfOn?'<span class="htag" style="background:var(--blush2)">PF −₹'+s.pfAmount.toLocaleString('en-IN')+'</span>':''}${s.esiOn?'<span class="htag" style="background:var(--blush2)">ESI −₹'+s.esiAmount.toLocaleString('en-IN')+'</span>':''}<span class="htag" style="background:var(--green);color:#fff;font-weight:700">Net ₹${s.netPay.toLocaleString('en-IN')}</span></div>`:'';
     const actionsHtml=`<div class="row-actions"><button class="row-action-btn" onclick="whatsappShareSummary('${s.staff.id}')">💬 WhatsApp</button>${s.staff.salary?`<button class="row-action-btn" onclick="downloadPayslipPDF('${s.staff.id}')">📄 PDF Slip</button>`:''}</div>`;
     return `<details class="report-row"><summary>
       <span class="report-row-chevron">▶</span>
@@ -2319,8 +2351,8 @@ function renderMiniTable(rows,firstColLabel){
 }
 function exportPayrollCSV(){
   if(!lastReportData||!lastReportData.length){showToast('Pehle report generate karo');return;}
-  const rows=[['Name','Role','Working Days','Present','Half Day','Absent','Payable Days','Per Day Salary','Gross Earned','PF Deduction','ESI Deduction','Net Pay']];
-  lastReportData.forEach(s=>{rows.push([s.staff.name,s.staff.role||'',s.workDays,s.present,s.halfDay,s.absent,s.payableDays,s.perDaySalary?s.perDaySalary.toFixed(2):0,s.grossEarned,s.pfAmount,s.esiAmount,s.netPay]);});
+  const rows=[['Name','Role','Working Days','Present','Half Day','Absent','Extra Days (Off-day worked)','Extra Pay','Payable Days','Per Day Salary','Gross Earned','PF Deduction','ESI Deduction','Net Pay']];
+  lastReportData.forEach(s=>{rows.push([s.staff.name,s.staff.role||'',s.workDays,s.present,s.halfDay,s.absent,s.extraDays||0,s.extraPay||0,s.payableDays,s.perDaySalary?s.perDaySalary.toFixed(2):0,s.grossEarned,s.pfAmount,s.esiAmount,s.netPay]);});
   dlCSV(rows,'varnica_payroll.csv');
 }
 function exportReportCSV(){if(!lastReportData.length){showToast('Generate report first');return;}const rows=[['Staff','Role','Date','Status','IN','OUT','Hours','Reason']];lastReportData.forEach(s=>{s.rows.forEach(r=>{rows.push([s.staff.name,s.staff.role||'',r.date,r.status,r.inTime,r.outTime,r.hours,r.reason]);});});dlCSV(rows,'varnica_report.csv');}
@@ -2390,7 +2422,8 @@ function drawPayslipPage(doc,s,pl){
     doc.text('Gross Earned',M+4,y+6);
     doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
     doc.text('Rs '+s.grossEarned.toLocaleString('en-IN'),M+4,y+11);
-    doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
+    if(s.extraDays){doc.setFont('helvetica','italic');doc.setFontSize(6.5);doc.setTextColor(184,149,90);doc.text('(incl. '+s.extraDays+' extra day'+(s.extraDays>1?'s':'')+' worked on off-day: Rs '+s.extraPay.toLocaleString('en-IN')+')',M+4,y+15);}
+    doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
     doc.text('PF ('+settings.pfRate+'%)',M+halfW+4,y+6);
     doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
     doc.text('Rs '+(s.pfOn?s.pfAmount:0).toLocaleString('en-IN'),M+halfW+4,y+11);
@@ -2580,11 +2613,12 @@ function loadManRec(){
   const sid=document.getElementById('manStaff').value,date=document.getElementById('manDate').value;
   if(!sid||!date)return;
   const rec=getAtt().find(a=>a.staffId===sid&&a.date===date);
-  const cd=document.getElementById('manCurRec'),ct=document.getElementById('manCurText');
+  const cd=document.getElementById('manCurRec'),ct=document.getElementById('manCurText'),undoBtn=document.getElementById('undoOutBtn');
   if(rec){cd.style.display='block';ct.textContent=rec.status+' | IN:'+(rec.inTime||'--')+' OUT:'+(rec.outTime||'--')+(rec.reason?' | '+rec.reason:'');
     if(rec.inTime)document.getElementById('manInTime').value=rec.inTime.substring(0,5);
     if(rec.outTime)document.getElementById('manOutTime').value=rec.outTime.substring(0,5);
-  }else{cd.style.display='none';}
+    undoBtn.style.display=rec.outTime?'block':'none';
+  }else{cd.style.display='none';undoBtn.style.display='none';}
   const card=document.getElementById('manLogCard'),list=document.getElementById('manLogList');
   const recs=getAtt().filter(a=>a.staffId===sid).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8);
   if(recs.length){card.style.display='block';
@@ -2595,6 +2629,24 @@ function loadManRec(){
       <span>${r.inTime||'--'}→${r.outTime||'--'}</span>
       ${r.reason?`<span style="color:var(--orange);font-style:italic">${r.reason}</span>`:''}
     </div>`}).join('');}
+}
+function undoOutPunch(){
+  const sid=document.getElementById('manStaff').value,date=document.getElementById('manDate').value;
+  if(!sid||!date)return;
+  const att=getAtt(),rec=att.find(a=>a.staffId===sid&&a.date===date);
+  if(!rec||!rec.outTime)return;
+  const settings=getSettings();
+  rec.outTime='';rec.hours=0;
+  // Recompute status from just the IN time (same logic as a fresh face-punch IN)
+  const staff=getStaff().find(s=>s.id===sid);
+  if(staff&&rec.inTime){
+    const lateMin=timeDiffMin(staff.shiftIn||'09:00',rec.inTime);
+    rec.status=(lateMin>settings.grace)?'Late':'Present';
+  }
+  if(!setAtt(att))return;
+  syncRecord(rec);
+  showToast('✅ OUT hata diya — '+(staff?staff.name:'Staff')+' ab wapas Punched IN hai');
+  loadManRec();renderTodayLog();updateDashStats();
 }
 function saveManEntry(){
   const sid=document.getElementById('manStaff').value,date=document.getElementById('manDate').value,
