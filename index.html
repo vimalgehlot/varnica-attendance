@@ -1592,36 +1592,54 @@ async function startScanLoop(){
   if(!faceMatcher){await buildMatcher();}
   const myGen=++scanLoopGen; // any older loop will now exit on its next tick
   const video=document.getElementById('mainVideo'),guide=document.getElementById('faceGuide'),label=document.getElementById('camLabel');
+  const FAST_MS=140;         // Stage-1 only (cheap) — feels responsive
+  const HEAVY_MS=300;        // after a Stage-2 run — give the CPU a breather
+  const MIN_FACE_RATIO=0.10; // face must be at least this wide vs frame before heavy recognition
   const loop=async()=>{
     if(myGen!==scanLoopGen)return;              // a newer loop took over — this one dies
     if(!mainStream){return;}                     // camera stopped — stop looping entirely
     if(!isStreamHealthy()){handleStreamDeath();return;}
+    let nextDelay=FAST_MS;
     if(video.readyState>=2&&video.videoWidth>0&&!cooldown){
       try{
-        const det=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.5})).withFaceLandmarks().withFaceDescriptor();
+        // ── STAGE 1: cheap presence check (detector only — no landmarks, no descriptor) ──
+        const box=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4}));
         if(myGen!==scanLoopGen)return;
-        if(det){
-          guide.className='face-guide detected';label.textContent='Face detected — matching...';
-          if(faceMatcher){
-            const match=faceMatcher.findBestMatch(det.descriptor);
-            if(match.label!=='unknown'){
-              const staff=getStaff().find(s=>s.id===match.label);
-              if(staff){guide.className='face-guide matched';cooldown=true;const punchPhoto=capturePunchThumbnail();await handlePunch(staff,punchPhoto);
-              scheduleCamIdleStop();
-              setTimeout(()=>{cooldown=false;guide.className='face-guide';
-              label.textContent='Agla staff scan kare...';resetStatusCard();
-              },2500);}
-            }else{
-              guide.className='face-guide failed';label.textContent='Not recognized — capturing...';
-              await captureFail();cooldown=true;setTimeout(()=>{cooldown=false;guide.className='face-guide';label.textContent='Position your face in the frame';resetStatusCard();},4000);
+        if(!box){
+          guide.className='face-guide';label.textContent='Position your face in the frame';
+        }else{
+          const relW=box.box.width/(video.videoWidth||1);
+          if(relW<MIN_FACE_RATIO){
+            guide.className='face-guide detected';label.textContent='Thoda paas aayiye...';
+          }else{
+            // ── STAGE 2: full recognition (unchanged) — only when someone is really there ──
+            nextDelay=HEAVY_MS;
+            guide.className='face-guide detected';label.textContent='Face detected — matching...';
+            const det=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.5})).withFaceLandmarks().withFaceDescriptor();
+            if(myGen!==scanLoopGen)return;
+            if(det){
+              if(faceMatcher){
+                const match=faceMatcher.findBestMatch(det.descriptor);
+                if(match.label!=='unknown'){
+                  const staff=getStaff().find(s=>s.id===match.label);
+                  if(staff){guide.className='face-guide matched';cooldown=true;const punchPhoto=capturePunchThumbnail();await handlePunch(staff,punchPhoto);
+                  scheduleCamIdleStop();
+                  setTimeout(()=>{cooldown=false;guide.className='face-guide';
+                  label.textContent='Agla staff scan kare...';resetStatusCard();
+                  },2500);}
+                }else{
+                  guide.className='face-guide failed';label.textContent='Not recognized — capturing...';
+                  await captureFail();cooldown=true;setTimeout(()=>{cooldown=false;guide.className='face-guide';label.textContent='Position your face in the frame';resetStatusCard();},4000);
+                }
+              }else{label.textContent='No staff registered yet';}
             }
-          }else{label.textContent='No staff registered yet';}
-        }else{guide.className='face-guide';label.textContent='Position your face in the frame';}
+          }
+        }
       }catch(e){}
     }
-    if(myGen===scanLoopGen)setTimeout(loop,300); // throttled — old iPad can sustain this
+    if(myGen===scanLoopGen)setTimeout(loop,nextDelay);
   };
-  setTimeout(loop,300);
+  setTimeout(loop,FAST_MS);
 }
 
 // ══════════════════════════════════════════════
