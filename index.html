@@ -963,6 +963,9 @@ function emergencyCleanupPhotos(){
     const log=JSON.parse(localStorage.getItem('vj_syncLog')||'[]');
     if(log.length>20)localStorage.setItem('vj_syncLog',JSON.stringify(log.slice(-20)));
   }catch(e){}
+  // 4. Pending (Unknown Face Approvals) queue — the #1 real storage hog found in practice.
+  //    Approve/Reject never used to remove the photo; this strips it now.
+  try{prunePendingPhotos();}catch(e){}
 }
 function getStorageBytes(){let t=0;for(const k in localStorage){if(localStorage.hasOwnProperty(k))t+=(localStorage[k].length+k.length)*2;}return t;}
 function fmtBytes(b){if(b<1024)return b+' B';if(b<1024*1024)return (b/1024).toFixed(1)+' KB';return (b/1024/1024).toFixed(2)+' MB';}
@@ -1256,6 +1259,7 @@ async function init(){
   checkConnection();setInterval(checkConnection,10000);
   renderBirthdayBanner();
   prunePunchPhotos();
+  prunePendingPhotos();
   cleanupPunchPhotosOnce();
   migrateExistingPhotos();
   await proactiveStorageCheck();
@@ -1977,9 +1981,9 @@ function renderApprovals(){
 function approveEntry(id){
   const sid=document.getElementById('as_'+id)?.value,s=getStaff().find(x=>x.id===sid);
   if(!sid||!s){showToast('Select staff');return;}
-  doPunch(s);const p=getPending(),e=p.find(x=>x.id===id);if(e)e.status='approved';setPending(p);renderApprovals();updateApprBadge();showToast('✅ Approved as '+s.name);
+  doPunch(s);const p=getPending(),e=p.find(x=>x.id===id);if(e){e.status='approved';delete e.photo;}setPending(p);renderApprovals();updateApprBadge();showToast('✅ Approved as '+s.name);
 }
-function rejectEntry(id){const p=getPending(),e=p.find(x=>x.id===id);if(e)e.status='rejected';setPending(p);renderApprovals();updateApprBadge();showToast('Rejected');}
+function rejectEntry(id){const p=getPending(),e=p.find(x=>x.id===id);if(e){e.status='rejected';delete e.photo;}setPending(p);renderApprovals();updateApprBadge();showToast('Rejected');}
 function updateApprBadge(){const c=getPending().filter(p=>p.status==='pending').length,b=document.getElementById('apprBadge');b.style.display=c?'inline-flex':'none';b.textContent=c;}
 
 // ══════════════════════════════════════════════
@@ -2102,8 +2106,9 @@ async function optimizeStorage(){
   const cutoffKey=toKey(cutoff);
   att.forEach(r=>{if(r.date<cutoffKey){if(r.inPhoto){delete r.inPhoto;ap++;}if(r.outPhoto){delete r.outPhoto;ap++;}}});
   if(ap)setAtt(att);
+  const pendResult=prunePendingPhotos();
   refreshStorageDisplay();
-  showToast('✅ '+n+' photos compress · '+dn+' staff ke face-data compact · '+ap+' purani punch photos hataayi',6000);
+  showToast('✅ '+n+' photos compress · '+dn+' face-data compact · '+ap+' punch photos · '+pendResult.stripped+' pending-approval photos hataayi',6500);
 }
 function saveSetting(){const s=getSettings();s.weekOff=parseInt(document.getElementById('weekOffSel').value);setSettings(s);showToast('Updated');}
 function editSetting(key){editingKey=key;const s=getSettings();const labels={grace:'Grace Period (min)',halfDay:'Half Day Threshold (hrs)',earlyOut:'Early Out Threshold (min)',pfRate:'PF Rate (%)',esiRate:'ESI Rate (%)',esiCeiling:'ESI Wage Ceiling (₹)'};document.getElementById('settingLbl').textContent=labels[key];document.getElementById('settingInput').value=s[key];openModal('settingModal');}
@@ -2614,6 +2619,22 @@ function prunePunchPhotos(){
     }
   });
   if(changed)setAtt(att);
+}
+function prunePendingPhotos(){
+  // vj_pending was found to be the #1 storage hog (77%!) — approve/reject never
+  // removed the photo, so every unknown-face capture ever made stayed forever.
+  let p=getPending();const before=p.length;let stripped=0;
+  p.forEach(e=>{if(e.status!=='pending'&&e.photo){delete e.photo;stripped++;}});
+  // Hard cap: keep only the newest 30 entries total (pending ones always kept,
+  // oldest resolved ones dropped first) — prevents unbounded growth forever.
+  if(p.length>30){
+    p.sort((a,b)=>(a.status==='pending'?1:0)-(b.status==='pending'?1:0)||(a.timestamp||'').localeCompare(b.timestamp||''));
+    const keepPending=p.filter(e=>e.status==='pending');
+    const keepResolved=p.filter(e=>e.status!=='pending').slice(-Math.max(0,30-keepPending.length));
+    p=[...keepResolved,...keepPending];
+  }
+  if(stripped||p.length!==before)setPending(p);
+  return{before,after:p.length,stripped};
 }
 function getTodaysBirthdayStaff(){return getStaff().filter(isBirthdayToday);}
 function renderBirthdayBanner(){
