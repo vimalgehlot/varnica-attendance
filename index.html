@@ -158,6 +158,13 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .log-title{font-family:"Cormorant Garamond",serif;font-size:16px;font-weight:700;color:var(--brand-deep);margin-bottom:10px;}
 .log-scroll{max-height:160px;overflow-y:auto;}
 .log-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--blush2);}
+.log-item-collapse{border-bottom:1px solid var(--blush2);}
+.log-item-collapse summary{list-style:none;cursor:pointer;}
+.log-item-collapse summary::-webkit-details-marker{display:none;}
+.log-item-collapse summary .log-item{border-bottom:none;padding-right:20px;position:relative;}
+.log-item-collapse summary .log-item::after{content:'▾';position:absolute;right:0;color:var(--text3);font-size:13px;transition:transform 0.2s;}
+.log-item-collapse[open] summary .log-item::after{transform:rotate(180deg);}
+.log-item-detail{padding:2px 8px 12px 50px;font-size:12px;color:var(--text2);}
 .log-item:last-child{border-bottom:none;}
 .log-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
 .log-dot.in{background:var(--green);}.log-dot.out{background:var(--blue);}.log-dot.fail{background:var(--red);}
@@ -189,7 +196,7 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 /* ADMIN */
 #adminPage{background:var(--blush);}
 .admin-tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--blush3);flex-shrink:0;overflow-x:auto;}
-.tab-btn{flex:1;min-width:60px;padding:11px 6px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:"DM Sans",sans-serif;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;transition:all 0.2s;}
+.tab-btn{flex:0 0 auto;min-width:78px;padding:11px 10px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:"DM Sans",sans-serif;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;transition:all 0.2s;}
 .tab-btn.active{color:var(--brand-dark);border-bottom-color:var(--brand);}
 .admin-scroll{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;}
 .card{background:var(--surface);border:1px solid var(--blush3);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);}
@@ -716,6 +723,10 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="btn" onclick="deepCleanStorage()" style="margin-top:6px;width:100%;background:var(--red);color:#fff">🧨 Deep Clean (agar storage 4 MB+ ho)</button>
       <div style="font-size:11px;color:var(--text3);margin-top:8px">Optimize = photos compress. Deep Clean = queue + logs + purani photos sab clear. Data safe rahega (VPS pe backup hai).</div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
+        <div><div class="set-lbl">✍️ Late/Absent Reason Compulsory</div><div class="set-sub">ON = staff "Skip" nahi kar sakta, reason likhna hi hoga. OFF = "Skip for now" button milega, reason optional.</div></div>
+        <label class="switch"><input type="checkbox" id="reasonCompulsoryToggle" onchange="toggleReasonCompulsory()"><span class="switch-slider"></span></label>
+      </div>
+      <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
         <div><div class="set-lbl">🎯 Ek Punch = Ek Tap</div><div class="set-sub">ON = har punch ke baad camera ruk jaata hai, agle staff ko khud tap karna hoga. Galti se dusre ka punch OUT hone se bachata hai. OFF = line mein continuous scanning.</div></div>
         <label class="switch"><input type="checkbox" id="singlePunchToggle" onchange="toggleSinglePunch()"><span class="switch-slider"></span></label>
       </div>
@@ -843,12 +854,17 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   <div class="popup-box">
     <div class="popup-icon" id="wpIcon">⚠️</div>
     <div class="popup-title" id="wpTitle"></div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:8px 0">
+      <img id="wpStaffPhoto" src="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;display:none">
+      <div style="font-size:20px;font-weight:800;color:var(--brand-deep)">👤 <span id="wpStaffName"></span></div>
+    </div>
     <div class="popup-time" id="wpTime"></div>
     <div class="popup-warning" id="wpMsg"></div>
     <div class="reason-label">Reason *</div>
     <textarea class="reason-input" id="wpReason" placeholder="Type reason here..."></textarea>
     <div class="reason-req" id="wpReqMsg" style="display:none">⚠️ Reason is compulsory.</div>
     <button class="btn btn-primary" style="margin-top:12px" onclick="submitWarning()">Submit & Record</button>
+    <button class="btn btn-secondary" id="wpSkipBtn" style="margin-top:8px;display:none" onclick="skipWarningReason()">⏭️ Skip for now</button>
   </div>
 </div>
 
@@ -866,12 +882,17 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   <div class="popup-box">
     <div class="popup-icon">📅</div>
     <div class="popup-title">Yesterday's Absence</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:8px 0">
+      <img id="absentStaffPhoto" src="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;display:none">
+      <div style="font-size:20px;font-weight:800;color:var(--brand-deep)">👤 <span id="absentStaffName"></span></div>
+    </div>
     <div class="popup-sub" id="absentMsg"></div>
     <div class="popup-warning">Reason is compulsory for attendance records.</div>
     <div class="reason-label">Reason *</div>
     <textarea class="reason-input" id="absentReason" placeholder="Enter reason..."></textarea>
     <div class="reason-req" id="absentReqMsg" style="display:none">⚠️ Please enter a reason.</div>
     <button class="btn btn-primary" style="margin-top:12px" onclick="submitAbsentReason()">Submit & Continue</button>
+    <button class="btn btn-secondary" id="absentSkipBtn" style="margin-top:8px;display:none" onclick="skipAbsentReason()">⏭️ Skip for now</button>
   </div>
 </div>
 
@@ -1045,6 +1066,21 @@ function cleanupPunchPhotosOnce(){
   DB.set('punchPhotosCleanedV1',true);
 }
 
+async function backfillAttendanceArchive(){
+  if(DB.get('archiveBackfilled_v1'))return;
+  try{
+    const att=getAtt();
+    if(att.length){
+      const clean=att.map(r=>{const c={...r};delete c.inPhoto;delete c.outPhoto;return c;});
+      // Send in batches of 200 to stay well under the request size limit
+      for(let i=0;i<clean.length;i+=200){
+        await fetch('/api/attendance-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,records:clean.slice(i,i+200)})}).catch(()=>{});
+      }
+      console.log('[archive] backfilled',clean.length,'historical records');
+    }
+  }catch(e){console.warn('[archive] backfill failed, will retry next load:',e);return;}
+  DB.set('archiveBackfilled_v1',true);
+}
 const cloudBackupTimers={};
 function cloudBackupSync(key,value){
   // Per-key debounce — different keys must NOT cancel each other (was causing attendance loss)
@@ -1150,7 +1186,7 @@ const getStaff=()=>DB.get('staff')||[];
 const setStaff=v=>{if(!DB.set('staff',v)){showToast('❌ Staff save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
 const getAtt=()=>DB.get('att')||[];
 const setAtt=v=>{if(!DB.set('att',v)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
-const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true,singlePunchMode:true},DB.get('settings')||{});
+const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true,singlePunchMode:true,reasonCompulsory:true},DB.get('settings')||{});
 const setSettings=v=>{if(!DB.set('settings',v)){showToast('❌ Settings save FAIL');return false;}return true;};
 const getPending=()=>DB.get('pending')||[];
 const setPending=v=>DB.set('pending',v);
@@ -1263,6 +1299,7 @@ async function init(){
   cleanupPunchPhotosOnce();
   migrateExistingPhotos();
   await proactiveStorageCheck();
+  backfillAttendanceArchive(); // Phase 1 of VPS-as-source-of-truth — fire and forget, doesn't block UI
   // Camera via Start Scan button only
   renderTodayLog();setDefaultDates();loadSheetUrl();updateSyncUI();
 }
@@ -1362,6 +1399,7 @@ function checkConnection(){
     dot.className='sync-dot online';
     status.textContent='Online';status.style.color='var(--green)';
     const q=getQueue();if(q.length&&!syncInProgress)autoSync();
+    processArchiveQueue();
   }else{
     dot.className='sync-dot offline';
     status.textContent='Offline — saved locally';status.style.color='var(--orange)';
@@ -1684,9 +1722,14 @@ async function handlePunch(staff,photo){
   const yAtt=getAtt().find(a=>a.staffId===staff.id&&a.date===yesterday);
   if(!yAtt&&!isWeekOff(new Date(Date.now()-86400000))&&!isHoliday(yesterday)){
     pendingAbsentId=staff.id;
-    document.getElementById('absentMsg').textContent=staff.name+', you were absent on '+yesterday+'. Please provide a reason.';
+    document.getElementById('absentStaffName').textContent=staff.name;
+    const absPhotoEl=document.getElementById('absentStaffPhoto');
+    if(staff.photo){absPhotoEl.src=staff.photo;absPhotoEl.style.display='inline-block';}else{absPhotoEl.style.display='none';}
+    document.getElementById('absentMsg').textContent='You were absent on '+yesterday+'. Please provide a reason.';
     document.getElementById('absentReason').value='';document.getElementById('absentReqMsg').style.display='none';
     pendingPunchData={staff,photo};openPopup('absentPopup');
+    const absSkipBtn=document.getElementById('absentSkipBtn');
+    if(absSkipBtn)absSkipBtn.style.display=(getSettings().reasonCompulsory===false)?'block':'none';
     setTimeout(()=>{const ta=document.getElementById('absentReason');if(ta)ta.focus();},500);
     return;
   }
@@ -1760,13 +1803,34 @@ function confirmOutPunch(){
 
 function syncRecord(rec){
   if(!rec)return;
-  const m=getSyncMeta();if(!m.url)return;
-  // Strip photo/descriptor fields before queueing — Google Sheets ko sirf attendance data chahiye,
-  // photos ya face-descriptors nahi. Isse queue kabhi bloat nahi hoga.
   const clean={...rec};
   delete clean.inPhoto;delete clean.outPhoto;
   delete clean.descriptors;delete clean.photo;
-  addToQueue({action:'punch',...clean});
+  // Permanent VPS archive — always, regardless of Google Sheets config (fire-and-forget, never blocks)
+  pushToArchive(clean);
+  // Existing Google Sheets queue — unchanged behaviour
+  const m=getSyncMeta();if(m.url)addToQueue({action:'punch',...clean});
+}
+function pushToArchive(rec){
+  try{
+    let q=JSON.parse(localStorage.getItem('vj_archiveQueue')||'[]');
+    q.push(rec);
+    if(q.length>60)q=q.slice(-60); // safety cap — VPS full sync (Push to Cloud) covers anything beyond this
+    localStorage.setItem('vj_archiveQueue',JSON.stringify(q));
+  }catch(e){}
+  if(navigator.onLine)processArchiveQueue();
+}
+let archiveSyncInProgress=false;
+async function processArchiveQueue(){
+  if(archiveSyncInProgress)return;
+  let q;try{q=JSON.parse(localStorage.getItem('vj_archiveQueue')||'[]');}catch(e){q=[];}
+  if(!q.length)return;
+  archiveSyncInProgress=true;
+  try{
+    const res=await fetch('/api/attendance-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,records:q})});
+    if(res.ok)localStorage.setItem('vj_archiveQueue','[]'); // all confirmed — safe to clear
+  }catch(e){/* stays queued, retried on next connection check */}
+  archiveSyncInProgress=false;
 }
 
 const BDAY_QUOTES=[
@@ -1805,6 +1869,9 @@ function showWelcomePopup(staff,type,time,rec){
 
 function showWarningPopup(staff,punchType,timeStr,warningType){
   document.getElementById('wpReason').value='';document.getElementById('wpReqMsg').style.display='none';
+  document.getElementById('wpStaffName').textContent=staff.name;
+  const photoEl=document.getElementById('wpStaffPhoto');
+  if(staff.photo){photoEl.src=staff.photo;photoEl.style.display='inline-block';}else{photoEl.style.display='none';}
   if(warningType==='late'){
     document.getElementById('wpIcon').textContent='⏰';document.getElementById('wpTitle').textContent='Late Arrival';
     document.getElementById('wpTime').textContent=timeStr;
@@ -1815,9 +1882,25 @@ function showWarningPopup(staff,punchType,timeStr,warningType){
     document.getElementById('wpMsg').textContent='Leaving before shift end ('+(staff.shiftOut||'18:00')+'). Please provide reason.';
   }
   openPopup('warningPopup');
+  const skipBtn=document.getElementById('wpSkipBtn');
+  if(skipBtn)skipBtn.style.display=(getSettings().reasonCompulsory===false)?'block':'none';
   setTimeout(()=>{const ta=document.getElementById('wpReason');if(ta)ta.focus();},500);
 }
 
+function skipWarningReason(){
+  if(!pendingPunchData)return;
+  const{staff,punchType,timeStr,warningType}=pendingPunchData;
+  const att=getAtt(),todayKey=toKey(new Date());
+  const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
+  if(rec){
+    if(warningType==='late')rec.status='Late';
+    else rec.status=rec.hours<getSettings().halfDay?'Half Day':'Early Out';
+    rec.reason='(skipped)';
+    if(setAtt(att))syncRecord(rec);
+  }
+  closePopup('warningPopup');
+  showWelcomePopup(staff,punchType,timeStr,rec);renderTodayLog();updateDashStats();pendingPunchData=null;
+}
 function submitWarning(){
   const reason=document.getElementById('wpReason').value.trim();
   if(!reason){document.getElementById('wpReqMsg').style.display='block';document.getElementById('wpReqMsg').textContent='⚠️ Reason is compulsory.';return;}
@@ -1838,6 +1921,18 @@ function submitWarning(){
   showWelcomePopup(staff,punchType,timeStr,rec);renderTodayLog();updateDashStats();pendingPunchData=null;
 }
 
+function skipAbsentReason(){
+  const yesterday=toKey(new Date(Date.now()-86400000));
+  const att=getAtt();
+  const staff=getStaff().find(s=>s.id===pendingAbsentId);
+  const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===yesterday);
+  if(existing){existing.absentReason='(skipped)';setAtt(att);}
+  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:'(skipped)'});setAtt(att);}
+  closePopup('absentPopup');
+  syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,status:'Absent',absentReason:'(skipped)',hours:0});
+  if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff,pendingPunchData.photo);
+  pendingAbsentId=null;pendingPunchData=null;
+}
 function submitAbsentReason(){
   const reason=document.getElementById('absentReason').value.trim();
   if(!reason){document.getElementById('absentReqMsg').style.display='block';document.getElementById('absentReqMsg').textContent='⚠️ Please enter a reason.';return;}
@@ -2031,6 +2126,12 @@ function refreshStorageDisplay(){
   if(t)t.checked=getSettings().localPhotoSave!==false;
   const sp=document.getElementById('singlePunchToggle');
   if(sp)sp.checked=getSettings().singlePunchMode!==false;
+  const rc=document.getElementById('reasonCompulsoryToggle');
+  if(rc)rc.checked=getSettings().reasonCompulsory!==false;
+}
+function toggleReasonCompulsory(){
+  const s=getSettings();s.reasonCompulsory=document.getElementById('reasonCompulsoryToggle').checked;setSettings(s);
+  showToast(s.reasonCompulsory?'✍️ Reason ab compulsory hai — Skip nahi hoga':'⏭️ Reason ab optional hai — Skip button milega');
 }
 function toggleSinglePunch(){
   const s=getSettings();s.singlePunchMode=document.getElementById('singlePunchToggle').checked;setSettings(s);
@@ -2541,9 +2642,16 @@ function whatsappShareSummary(staffId){
 // ══════════════════════════════════════════════
 // TODAY LOG
 // ══════════════════════════════════════════════
+let _todayPhotoCache=[];
+function viewTodayPhoto(idx){
+  const src=_todayPhotoCache[idx];if(!src)return;
+  document.getElementById('photoLightboxImg').src=src;
+  openPopup('photoLightbox');
+}
 function renderTodayLog(){
   const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staffMap={};
   getStaff().forEach(s=>{staffMap[s.id]=s;});
+  _todayPhotoCache=[];
   ['todayLogMini','dashLog'].forEach(id=>{
     const el=document.getElementById(id);if(!el)return;
     if(!att.length){el.innerHTML='<div class="empty-state" style="padding:16px"><div style="font-size:28px">📭</div><p style="font-size:12px;margin-top:6px">No records yet</p></div>';return;}
@@ -2555,7 +2663,24 @@ function renderTodayLog(){
       const thumbHtml=s&&s.photo
         ? `<img src="${s.photo}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0" alt="">`
         : `<div style="width:32px;height:32px;border-radius:50%;background:var(--blush2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">👤</div>`;
-      return '<div class="log-item"><div class="log-dot '+type+'"></div>'+thumbHtml+'<div class="log-name">'+a.staffName+'</div><div class="log-time">'+(a.outTime||a.inTime||'--')+'</div><span class="log-badge '+lc+'">'+lbl+'</span></div>';
+      const reasonText=a.reason||a.earlyOutReason||a.absentReason||'';
+      const needsReason=(a.status==='Late'||a.status==='Half Day'||a.status==='Early Out'||a.status==='Absent');
+      const missingReason=needsReason&&!reasonText;
+      const skipped=reasonText==='(skipped)';
+      let inPhotoIc='',outPhotoIc='';
+      if(a.inPhoto){_todayPhotoCache.push(a.inPhoto);const idx=_todayPhotoCache.length-1;inPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();viewTodayPhoto(${idx})">📷</span>`;}
+      else if(a.hasInPhoto)inPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();showVpsPhoto('${a.staffId}','${a.date}','in')">📷</span>`;
+      if(a.outPhoto){_todayPhotoCache.push(a.outPhoto);const idx=_todayPhotoCache.length-1;outPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();viewTodayPhoto(${idx})">📷</span>`;}
+      else if(a.hasOutPhoto)outPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();showVpsPhoto('${a.staffId}','${a.date}','out')">📷</span>`;
+      const warnIcon=missingReason?' <span style="color:var(--red)" title="Reason missing">⚠️</span>':'';
+      return `<details class="log-item-collapse"><summary><div class="log-item"><div class="log-dot ${type}"></div>${thumbHtml}<div class="log-name">${escHtml(a.staffName)}${warnIcon}</div><div class="log-time">${a.outTime||a.inTime||'--'}</div><span class="log-badge ${lc}">${lbl}</span></div></summary>
+        <div class="log-item-detail">
+          <div>IN: <span class="mono">${a.inTime||'--'}</span>${inPhotoIc}${a.outTime?` &nbsp;·&nbsp; OUT: <span class="mono">${a.outTime}</span>${outPhotoIc}`:''}</div>
+          ${reasonText&&!skipped?`<div style="margin-top:4px;color:var(--orange)">💬 ${escHtml(reasonText)}</div>`:''}
+          ${skipped?`<div style="margin-top:4px;color:var(--text3)">⏭️ Reason skip kiya gaya tha</div>`:''}
+          ${missingReason?`<div style="margin-top:4px;color:var(--red)">⚠️ Reason nahi diya gaya — Manual tab se add karo</div>`:''}
+        </div>
+      </details>`;
     }).join('');
   });
 }
