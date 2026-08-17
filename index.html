@@ -225,6 +225,8 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .btn-outline{background:transparent;color:var(--brand-dark);border:1px solid rgba(184,149,90,0.4);width:100%;margin-top:8px;}
 .btn-green{background:var(--green-bg);color:var(--green);border:1px solid rgba(74,140,92,0.25);width:100%;margin-top:8px;}
 .ig{margin-bottom:14px;}
+.ig-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+.ig-row .ig{margin-bottom:0;}
 .il{font-size:11px;color:var(--text3);margin-bottom:5px;display:block;text-transform:uppercase;letter-spacing:0.5px;}
 .if{width:100%;padding:11px 14px;background:var(--blush);border:1px solid var(--blush3);border-radius:var(--radius-sm);color:var(--text);font-family:"DM Sans",sans-serif;font-size:14px;outline:none;transition:border-color 0.2s;}
 .if:focus{border-color:var(--brand-light);}
@@ -649,7 +651,8 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="rtbtn" id="viewDayBtn" onclick="setReportView('day')">📅 Day-wise</button>
       <button class="rtbtn" id="viewMatrixBtn" onclick="setReportView('matrix')">📊 Matrix</button>
     </div>
-    <div style="text-align:right;margin-bottom:8px">
+    <div style="text-align:right;margin-bottom:8px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-outline" id="salaryRevealBtn" onclick="toggleSalaryReveal()" style="padding:6px 14px;font-size:12px;width:auto">👁️ Show Salary</button>
       <button class="btn btn-outline" id="expandAllBtn" onclick="toggleAllReportRows()" style="padding:6px 14px;font-size:12px;width:auto">🔽 Sab Expand Karo</button>
     </div>
     <div class="report-sticky" id="reportSticky" style="display:none">
@@ -799,7 +802,10 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div class="ig"><label class="il">Shift End *</label><input type="time" class="if" id="sOut" value="18:00"></div>
     </div>
     <div class="irow">
-      <div class="ig"><label class="il">Monthly Salary (₹)</label><input type="number" class="if" id="sSalary" placeholder="e.g. 15000" min="0"></div>
+      <div class="ig-row">
+        <div class="ig"><label class="il">Salary Amount (₹)</label><input type="number" class="if" id="sSalary" placeholder="e.g. 15000" min="0"></div>
+        <div class="ig"><label class="il">Basis</label><select class="if" id="sSalaryBasis"><option value="monthly">Per Month</option><option value="yearly">Per Year</option></select></div>
+      </div>
       <div class="ig"><label class="il">PF Applicable?</label><select class="if" id="sPF"><option value="1">Yes</option><option value="0">No</option></select></div>
     </div>
     <div class="ig"><label class="il">ESI Applicable?</label><select class="if" id="sESI"><option value="1">Yes</option><option value="0">No</option></select></div>
@@ -1980,12 +1986,12 @@ function renderStaffList(){
   if(!allStaff.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">👥</div><p>No staff added yet</p></div>';return;}
   if(!staff.length){el.innerHTML='<div class="empty-state"><p>No staff matching "'+escHtml(term)+'"</p></div>';return;}
   if(typeof renderBirthdayBanner==='function')renderBirthdayBanner();
-  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions"><button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
+  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?(salaryRevealed?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):' &nbsp;🔒 Salary hidden'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions"><button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
 }
 function openAddStaff(){
   document.getElementById('editStaffId').value='';document.getElementById('sName').value='';document.getElementById('sRole').value='';
   document.getElementById('sIn').value='09:00';document.getElementById('sOut').value='18:00';
-  document.getElementById('sSalary').value='';document.getElementById('sPF').value='1';document.getElementById('sESI').value='1';document.getElementById('sDob').value='';
+  document.getElementById('sSalary').value='';document.getElementById('sSalaryBasis').value='monthly';document.getElementById('sPF').value='1';document.getElementById('sESI').value='1';document.getElementById('sDob').value='';
   document.getElementById('staffModalTitle').textContent='➕ Add Staff';
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
   openModal('staffModal');startRegCam();
@@ -1994,7 +2000,7 @@ function reRegFace(id){
   const s=getStaff().find(x=>x.id===id);if(!s)return;
   document.getElementById('editStaffId').value=id;document.getElementById('sName').value=s.name;document.getElementById('sRole').value=s.role||'';
   document.getElementById('sIn').value=s.shiftIn;document.getElementById('sOut').value=s.shiftOut;
-  document.getElementById('sSalary').value=s.salary||'';document.getElementById('sPF').value=s.pf===0?'0':'1';document.getElementById('sESI').value=s.esi===0?'0':'1';document.getElementById('sDob').value=s.dob||'';
+  document.getElementById('sSalary').value=s.salary||'';document.getElementById('sSalaryBasis').value=s.salaryBasis||'monthly';document.getElementById('sPF').value=s.pf===0?'0':'1';document.getElementById('sESI').value=s.esi===0?'0':'1';document.getElementById('sDob').value=s.dob||'';
   document.getElementById('staffModalTitle').textContent='📷 Re-register — '+s.name;
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
   openModal('staffModal');startRegCam();
@@ -2016,6 +2022,7 @@ async function saveStaff(){
   const name=document.getElementById('sName').value.trim(),role=document.getElementById('sRole').value.trim();
   const shiftIn=document.getElementById('sIn').value,shiftOut=document.getElementById('sOut').value;
   const salary=parseFloat(document.getElementById('sSalary').value)||0;
+  const salaryBasis=document.getElementById('sSalaryBasis').value||'monthly';
   const pf=parseInt(document.getElementById('sPF').value);
   const esi=parseInt(document.getElementById('sESI').value);
   const dob=document.getElementById('sDob').value||'';
@@ -2025,7 +2032,7 @@ async function saveStaff(){
   if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
   if(!regPhotos.length&&eid){
     const staff=getStaff(),s=staff.find(x=>x.id===eid);
-    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.pf=pf;s.esi=esi;s.dob=dob;}
+    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.pf=pf;s.esi=esi;s.dob=dob;}
     setStaff(staff);closeModal('staffModal');stopRegCam();renderStaffList();showToast('Updated!');return;
   }
   _staffSaving=true;
@@ -2043,8 +2050,8 @@ async function saveStaff(){
     const staff=getStaff();
     // Compress photo before storing (240x240 max, JPEG q=0.75) — prevents quota-exceeded
     const smallPhoto=await compressPhoto(regPhotos[0],240,0.75);
-    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.pf=pf;s.esi=esi;s.dob=dob;s.descriptors=descs;s.photo=smallPhoto;}}
-    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,pf,esi,dob,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString()});
+    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.pf=pf;s.esi=esi;s.dob=dob;s.descriptors=descs;s.photo=smallPhoto;}}
+    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,salaryBasis,pf,esi,dob,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString()});
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
     showToast('✅ '+name+' saved with '+descs.length+' face samples!');
   }catch(e){showToast('Error: '+e.message);}
@@ -2237,35 +2244,52 @@ function generateReport(){
   const prevDates=getDatesInRange(toKey(prevFrom),toKey(prevTo));
   const target=sf?staff.filter(s=>s.id===sf):staff;const summaries=[];
   target.forEach(s=>{
-    let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0,extraDays=0;const rows=[];
+    let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0,extraDays=0,grossEarned=0,extraPay=0,unpaidOffDays=0;const rows=[];
     dates.forEach(d=>{
       const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
+      const dailyRate=getDailyRate(s,d);
       if(isWO||isHol){
         if(rec&&rec.inTime){
-          // Staff worked on their week-off/holiday — count as EXTRA day (bonus pay), not a normal work day
+          // Worked on a week-off/holiday: gets BOTH the normal paid-rest-day amount AND a full
+          // extra bonus on top — 2x total. Independent of the sandwich rule since they came in and worked.
           extraDays++;
+          const dayPay=Math.round(dailyRate);
+          extraPay+=dayPay;grossEarned+=dayPay*2;
           rows.push({date:d,staffId:s.id,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
         }else{
-          rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});
+          // Not worked — paid by default, unless sandwiched by Absence on both adjacent days
+          const sandwiched=isSandwichedOff(s.id,d,att);
+          if(sandwiched)unpaidOffDays++;
+          else grossEarned+=dailyRate;
+          rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:sandwiched?'⚠️ Unpaid — absent both sides':''});
         }
         return;
       }
       workDays++;
       if(!rec||!rec.inTime){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
-      else{if(rec.status==='Late')late++;if(rec.status==='Half Day')halfDay++;if(rec.status==='Overtime')overtime++;if(rec.status==='Early Out')earlyOut++;if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;rows.push({date:d,staffId:s.id,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});}
+      else{
+        if(rec.status==='Late')late++;
+        if(rec.status==='Half Day')halfDay++;
+        if(rec.status==='Overtime')overtime++;
+        if(rec.status==='Early Out')earlyOut++;
+        if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;
+        grossEarned+=(rec.status==='Half Day')?dailyRate*0.5:dailyRate;
+        rows.push({date:d,staffId:s.id,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+      }
     });
     const settings=getSettings();
     const payableDays=present+halfDay*0.5;
-    const perDaySalary=(s.salary&&workDays>0)?s.salary/workDays:0;
-    const extraPay=Math.round(perDaySalary*extraDays);
-    const grossEarned=perDaySalary*payableDays+extraPay;
+    const perDaySalary=payableDays>0?(grossEarned-extraPay)/payableDays:0; // effective average rate for display only
     const pfOn=s.pf!==0;const esiOn=s.esi!==0&&s.salary&&s.salary<=settings.esiCeiling;
     const pfAmount=pfOn?Math.round(grossEarned*settings.pfRate/100):0;
     const esiAmount=esiOn?Math.round(grossEarned*settings.esiRate/100):0;
-    const netPay=Math.round(grossEarned-pfAmount-esiAmount);
+    let netPay=Math.round(grossEarned-pfAmount-esiAmount);
+    const override=getSalaryOverride(s.id,from,to);
+    const isOverride=!!override;
+    if(isOverride)netPay=Math.round(override.amount);
     const prevPct=computeQuickPct(s.id,prevDates,att);
-    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,extraDays,extraPay,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,perDaySalary,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,prevPct});
+    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,extraDays,extraPay,unpaidOffDays,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,perDaySalary,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,prevPct,isOverride});
   });
   lastReportData=summaries;
   lastDayWiseData=buildDayWiseData(dates,target,att);
@@ -2351,6 +2375,26 @@ function toggleAllReportRows(){
   rows.forEach(r=>r.open=anyClosed);
   const btn=document.getElementById('expandAllBtn');
   if(btn)btn.textContent=anyClosed?'🔼 Sab Collapse Karo':'🔽 Sab Expand Karo';
+}
+let salaryRevealed=false; // resets to hidden on every fresh page load — safest default
+function toggleSalaryReveal(){
+  if(salaryRevealed){
+    salaryRevealed=false;
+    renderReportTable();renderStaffList();
+    const btn=document.getElementById('salaryRevealBtn');if(btn)btn.textContent='👁️ Show Salary';
+    showToast('🙈 Salary hidden again');
+    return;
+  }
+  const pin=prompt('Enter Admin PIN to reveal salary amounts:');
+  if(pin===null)return;
+  if(pin===getSettings().adminPin){
+    salaryRevealed=true;
+    renderReportTable();renderStaffList();
+    const btn=document.getElementById('salaryRevealBtn');if(btn)btn.textContent='🙈 Hide Salary';
+    showToast('👁️ Salary revealed for this session');
+  }else{
+    showToast('❌ Incorrect PIN');
+  }
 }
 function renderReportTable(){
   if(reportViewMode==='day')renderDayWiseTable(lastDayWiseData);
@@ -2464,7 +2508,13 @@ function renderStaffWiseTable(summaries){
       else if(diff<0)trendHtml=`<span class="trend-down">▼ ${Math.abs(diff)}% vs last period</span>`;
       else trendHtml=`<span class="trend-flat">= same as last period</span>`;
     }
-    const payrollHtml=s.staff.salary?`<div class="row-payroll"><span class="htag" style="background:var(--blush2)">📅 ${s.payableDays}/${s.workDays}d</span>${s.extraDays?'<span class="htag" style="background:rgba(184,149,90,0.2);color:#b8955a;font-weight:700">➕ '+s.extraDays+' extra day'+(s.extraDays>1?'s':'')+' (+₹'+s.extraPay.toLocaleString('en-IN')+')</span>':''}<span class="htag" style="background:var(--blush2)">Gross ₹${s.grossEarned.toLocaleString('en-IN')}</span>${s.pfOn?'<span class="htag" style="background:var(--blush2)">PF −₹'+s.pfAmount.toLocaleString('en-IN')+'</span>':''}${s.esiOn?'<span class="htag" style="background:var(--blush2)">ESI −₹'+s.esiAmount.toLocaleString('en-IN')+'</span>':''}<span class="htag" style="background:var(--green);color:#fff;font-weight:700">Net ₹${s.netPay.toLocaleString('en-IN')}</span></div>`:'';
+    const overrideHtml=s.isOverride
+      ? `<span class="htag" style="background:rgba(184,149,90,0.25);color:#8a6a2f;font-weight:700">✏️ Manually Set</span> <button class="row-action-btn" style="padding:3px 8px;font-size:10px" onclick="event.stopPropagation();removeSalaryOverride('${s.staff.id}')">↩️ Revert to Calculated</button>`
+      : `<button class="row-action-btn" style="padding:3px 8px;font-size:10px" onclick="event.stopPropagation();promptSalaryOverride('${s.staff.id}')">✏️ Set Manually</button>`;
+    const payrollHtml=s.staff.salary?(salaryRevealed
+      ? `<div class="row-payroll"><span class="htag" style="background:var(--blush2)">📅 ${s.payableDays}/${s.workDays}d</span>${s.extraDays?'<span class="htag" style="background:rgba(184,149,90,0.2);color:#b8955a;font-weight:700">➕ '+s.extraDays+' extra day'+(s.extraDays>1?'s':'')+' (+₹'+s.extraPay.toLocaleString('en-IN')+')</span>':''}${s.unpaidOffDays?'<span class="htag" style="background:rgba(196,75,53,0.15);color:var(--red)">🚫 '+s.unpaidOffDays+' unpaid off-day'+(s.unpaidOffDays>1?'s':'')+' (sandwiched)</span>':''}<span class="htag" style="background:var(--blush2)">Gross ₹${s.grossEarned.toLocaleString('en-IN')}</span>${s.pfOn?'<span class="htag" style="background:var(--blush2)">PF −₹'+s.pfAmount.toLocaleString('en-IN')+'</span>':''}${s.esiOn?'<span class="htag" style="background:var(--blush2)">ESI −₹'+s.esiAmount.toLocaleString('en-IN')+'</span>':''}<span class="htag" style="background:var(--green);color:#fff;font-weight:700">Net ₹${s.netPay.toLocaleString('en-IN')}</span><br>${overrideHtml}</div>`
+      : `<div class="row-payroll"><span class="htag" style="background:var(--blush2)">📅 ${s.payableDays}/${s.workDays}d</span><span class="htag" style="background:var(--blush2)">🔒 Salary hidden — tap "Show Salary" above</span></div>`
+    ):'';
     const actionsHtml=`<div class="row-actions"><button class="row-action-btn" onclick="whatsappShareSummary('${s.staff.id}')">💬 WhatsApp</button>${s.staff.salary?`<button class="row-action-btn" onclick="downloadPayslipPDF('${s.staff.id}')">📄 PDF Slip</button>`:''}</div>`;
     return `<details class="report-row"><summary>
       <span class="report-row-chevron">▶</span>
@@ -2727,6 +2777,62 @@ function timeDiffHours(a,b){return timeDiffMin(a,b)/60;}
 function getTimeOfDay(){const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';}
 function isWeekOff(date){return date.getDay()===parseInt(getSettings().weekOff||0);}
 function isHoliday(ds){return(getSettings().holidays||[]).some(h=>h.date===ds);}
+function addDaysToKey(dateStr,delta){const d=new Date(dateStr+'T00:00:00');d.setDate(d.getDate()+delta);return toKey(d);}
+function getCalendarDaysInMonth(ym){const[y,m]=ym.split('-').map(Number);return new Date(y,m,0).getDate();}
+function getDailyRate(staff,dateStr){
+  if(!staff.salary)return 0;
+  if(staff.salaryBasis==='yearly')return staff.salary/365;
+  return staff.salary/getCalendarDaysInMonth(dateStr.substring(0,7));
+}
+function isAbsentWorkDay(staffId,dateStr,att){
+  // True only if dateStr is a normal working day (not week-off/holiday) AND staff has no valid IN punch that day
+  if(isWeekOff(new Date(dateStr+'T00:00:00'))||isHoliday(dateStr))return false;
+  const rec=att.find(a=>a.staffId===staffId&&a.date===dateStr);
+  return !rec||!rec.inTime;
+}
+function isSandwichedOff(staffId,dateStr,att){
+  // Sandwich rule: the calendar day immediately before AND immediately after must BOTH be a
+  // normal working day where the staff was Absent, for this week-off/holiday to become unpaid.
+  return isAbsentWorkDay(staffId,addDaysToKey(dateStr,-1),att)&&isAbsentWorkDay(staffId,addDaysToKey(dateStr,1),att);
+}
+// ── Manual Salary Override — lets admin type a final Net Pay for a specific staff+period,
+//    bypassing the formula entirely (e.g. negotiated adjustments, special cases) ──
+function getSalaryOverride(staffId,from,to){
+  try{const o=JSON.parse(localStorage.getItem('vj_salaryOverrides')||'[]');return o.find(x=>x.staffId===staffId&&x.from===from&&x.to===to)||null;}catch(e){return null;}
+}
+function setSalaryOverride(staffId,from,to,amount){
+  try{
+    let o=JSON.parse(localStorage.getItem('vj_salaryOverrides')||'[]');
+    o=o.filter(x=>!(x.staffId===staffId&&x.from===from&&x.to===to));
+    o.push({staffId,from,to,amount,setAt:new Date().toISOString()});
+    if(o.length>200)o=o.slice(-200);
+    localStorage.setItem('vj_salaryOverrides',JSON.stringify(o));
+  }catch(e){}
+}
+function clearSalaryOverride(staffId,from,to){
+  try{
+    let o=JSON.parse(localStorage.getItem('vj_salaryOverrides')||'[]');
+    o=o.filter(x=>!(x.staffId===staffId&&x.from===from&&x.to===to));
+    localStorage.setItem('vj_salaryOverrides',JSON.stringify(o));
+  }catch(e){}
+}
+function promptSalaryOverride(staffId){
+  const from=document.getElementById('rptFrom').value,to=document.getElementById('rptTo').value;
+  const s=lastReportData.find(x=>x.staff.id===staffId);if(!s)return;
+  const val=prompt('Enter final Net Pay for '+s.staff.name+' ('+from+' to '+to+'):',s.netPay);
+  if(val===null)return;
+  const amount=parseFloat(val);
+  if(isNaN(amount)||amount<0){showToast('Invalid amount');return;}
+  setSalaryOverride(staffId,from,to,amount);
+  showToast('✅ Manual salary set for '+s.staff.name);
+  generateReport();
+}
+function removeSalaryOverride(staffId){
+  const from=document.getElementById('rptFrom').value,to=document.getElementById('rptTo').value;
+  clearSalaryOverride(staffId,from,to);
+  showToast('↩️ Reverted to calculated salary');
+  generateReport();
+}
 function isBirthdayToday(staff){
   if(!staff||!staff.dob)return false;
   const today=new Date(),dob=new Date(staff.dob+'T00:00:00');
