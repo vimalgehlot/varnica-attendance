@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>My Attendance — Varnica Jewels</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand:#B8955A;--brand-light:#D4B483;--brand-dark:#8B6A35;--brand-deep:#5C4220;
+  --blush:#F8EEE8;--blush2:#F2E4DA;--blush3:#E8D4C8;
+  --surface:#FFFAF7;--surface2:#FFF5EF;
+  --text:#2C1A0A;--text2:#7A5C3A;--text3:#B89878;
+  --green:#4A8C5C;--green-bg:#EBF5EE;--red:#C44B35;--red-bg:#FCECEA;
+  --orange:#C47A20;--orange-bg:#FEF3E2;--blue:#3A6EA8;--blue-bg:#EAF0F8;
+  --radius:16px;--shadow:0 4px 24px rgba(184,149,90,0.12);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:var(--blush);font-family:"DM Sans",sans-serif;color:var(--text);line-height:1.5;padding-bottom:40px;}
+.hdr{background:var(--surface);border-bottom:1px solid var(--blush3);padding:14px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:20;}
+.hdr-t{font-family:"Cormorant Garamond",serif;font-size:20px;color:var(--brand-deep);letter-spacing:1.5px;line-height:1.1;}
+.hdr-s{font-size:9.5px;color:var(--text3);letter-spacing:2px;text-transform:uppercase;}
+.wrap{max-width:640px;margin:0 auto;padding:16px;}
+.card{background:var(--surface);border:1px solid var(--blush3);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:14px;}
+.sec-t{font-family:"Cormorant Garamond",serif;font-size:18px;color:var(--brand-deep);margin-bottom:10px;}
+label{display:block;font-size:11px;color:var(--text2);margin-bottom:5px;font-weight:600;}
+input,select{width:100%;padding:12px;border:1px solid var(--blush3);border-radius:10px;font-family:"DM Sans",sans-serif;font-size:15px;background:var(--surface2);color:var(--text);}
+input:focus,select:focus{outline:none;border-color:var(--brand);}
+.btn{width:100%;padding:14px;border:none;border-radius:12px;font-family:"DM Sans",sans-serif;font-size:15px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,var(--brand-light),var(--brand-dark));color:#fff;}
+.btn:active{transform:translateY(1px);}
+.btn-ghost{background:none;border:1px solid var(--blush3);color:var(--text2);font-weight:600;}
+.err{background:var(--red-bg);color:var(--red);padding:10px 12px;border-radius:9px;font-size:13px;margin-top:10px;display:none;}
+.hidden{display:none!important;}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.stat{background:var(--surface2);border:1px solid var(--blush2);border-radius:11px;padding:11px 6px;text-align:center;}
+.stat-v{font-size:21px;font-weight:800;line-height:1;}
+.stat-l{font-size:9.5px;color:var(--text3);margin-top:4px;text-transform:uppercase;letter-spacing:0.4px;}
+.calc{background:var(--surface2);border:1px dashed var(--blush3);border-radius:12px;padding:12px;}
+.crow{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13.5px;}
+.crow+.crow{border-top:1px solid var(--blush2);}
+.crow .k{color:var(--text2);}
+.crow .v{font-weight:700;font-family:"JetBrains Mono",monospace;}
+.ctot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:10px 12px;background:var(--brand);color:#fff;border-radius:10px;font-weight:800;}
+.ctot .v{font-size:18px;font-family:"JetBrains Mono",monospace;}
+.money .crow .v{font-size:14px;}
+.netbar{display:flex;justify-content:space-between;align-items:center;background:var(--green);color:#fff;border-radius:12px;padding:14px 16px;margin-top:10px;}
+.netbar .l{font-size:13px;font-weight:600;letter-spacing:0.4px;}
+.netbar .n{font-size:24px;font-weight:800;font-family:"JetBrains Mono",monospace;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{text-align:left;padding:7px 6px;border-bottom:2px solid var(--blush2);color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:0.4px;}
+td{padding:8px 6px;border-bottom:1px solid var(--blush2);vertical-align:top;}
+.mono{font-family:"JetBrains Mono",monospace;font-size:11.5px;}
+.rsn{font-size:11px;color:var(--orange);font-style:italic;}
+.tabs{display:flex;gap:7px;margin-bottom:12px;flex-wrap:wrap;}
+.tab{flex:1;min-width:88px;padding:9px;border:1px solid var(--blush3);background:var(--surface);border-radius:9px;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;font-family:"DM Sans",sans-serif;}
+.tab.on{background:var(--brand);color:#fff;border-color:var(--brand);}
+.foot{text-align:center;font-size:10.5px;color:var(--text3);padding:14px;}
+.load{text-align:center;padding:40px 16px;color:var(--text3);font-size:14px;}
+.note{font-size:11.5px;color:var(--text3);margin-top:8px;line-height:1.55;}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div style="flex:1">
+    <div class="hdr-t">VARNICA</div>
+    <div class="hdr-s">My Attendance</div>
+  </div>
+  <button id="outBtn" class="btn btn-ghost hidden" style="width:auto;padding:8px 14px;font-size:12px" onclick="logout()">Log out</button>
+</div>
+
+<div class="wrap">
+
+  <!-- LOGIN -->
+  <div id="loginBox" class="card">
+    <div class="sec-t">Welcome 🙏</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:14px" id="loginHint">Enter the PIN given to you by the admin.</div>
+    <div style="margin-bottom:12px">
+      <label>Your PIN</label>
+      <input type="tel" id="pin" inputmode="numeric" maxlength="8" placeholder="••••" autocomplete="off">
+    </div>
+    <button class="btn" onclick="login()">View My Attendance</button>
+    <div class="err" id="loginErr"></div>
+    <div class="note">This page is only for viewing. Your attendance is punched on the office device.</div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dash" class="hidden">
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="flex:1">
+          <div style="font-size:17px;font-weight:800" id="myName"></div>
+          <div style="font-size:12px;color:var(--text3)" id="myRole"></div>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab on" id="tabThis" onclick="setPeriod('this')">This Month</button>
+        <button class="tab" id="tabLast" onclick="setPeriod('last')">Last Month</button>
+      </div>
+      <div style="font-size:12px;color:var(--text2);text-align:center" id="periodLbl"></div>
+    </div>
+
+    <div id="loading" class="load">Loading your details...</div>
+
+    <div id="content" class="hidden">
+      <div class="card">
+        <div class="sec-t">📊 Attendance</div>
+        <div class="stats">
+          <div class="stat"><div class="stat-v" style="color:var(--green)" id="sPresent">0</div><div class="stat-l">Present</div></div>
+          <div class="stat"><div class="stat-v" style="color:var(--red)" id="sAbsent">0</div><div class="stat-l">Absent</div></div>
+          <div class="stat"><div class="stat-v" style="color:var(--orange)" id="sLate">0</div><div class="stat-l">Late</div></div>
+          <div class="stat"><div class="stat-v" style="color:var(--orange)" id="sEarly">0</div><div class="stat-l">Early Out</div></div>
+          <div class="stat"><div class="stat-v" style="color:var(--orange)" id="sHalf">0</div><div class="stat-l">Half Day</div></div>
+          <div class="stat"><div class="stat-v" style="color:var(--blue)" id="sOT">0</div><div class="stat-l">Overtime</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sec-t">🧮 Paying Days</div>
+        <div class="calc">
+          <div class="crow"><span class="k">Present</span><span class="v" id="cPresent">0</span></div>
+          <div class="crow"><span class="k">Half Day (× 0.5)</span><span class="v" id="cHalf">0</span></div>
+          <div class="crow"><span class="k">Week-off / Holiday</span><span class="v" id="cOff">0</span></div>
+          <div class="crow"><span class="k">Worked on Off-day</span><span class="v" id="cExtra">0</span></div>
+          <div class="ctot"><span>Total Paying Days</span><span class="v" id="cTotal">0</span></div>
+        </div>
+        <div class="note hidden" id="unpaidNote"></div>
+      </div>
+
+      <div class="card" id="salaryCard">
+        <div class="sec-t">💰 Salary</div>
+        <div class="calc money">
+          <div class="crow"><span class="k">Fixed Salary <span id="basisLbl" style="color:var(--text3)"></span></span><span class="v" id="mFixed">–</span></div>
+          <div class="crow"><span class="k">Per Day Rate</span><span class="v" id="mRate">–</span></div>
+          <div class="crow"><span class="k">Paying Days</span><span class="v" id="mDays">–</span></div>
+          <div class="crow" style="background:var(--blush2);margin:0 -12px;padding:8px 12px"><span class="k" style="font-weight:700;color:var(--text)">Gross Salary</span><span class="v" id="mGross">–</span></div>
+          <div class="crow hidden" id="pfRow"><span class="k">PF Deduction</span><span class="v" style="color:var(--red)" id="mPF">–</span></div>
+          <div class="crow hidden" id="esiRow"><span class="k">ESI Deduction</span><span class="v" style="color:var(--red)" id="mESI">–</span></div>
+        </div>
+        <div class="netbar"><span class="l">NET PAY (Take-Home)</span><span class="n" id="mNet">–</span></div>
+        <div class="note">This is an estimate based on your attendance so far in this period.</div>
+      </div>
+
+      <div class="card hidden" id="salaryOff">
+        <div class="sec-t">💰 Salary</div>
+        <div class="note" style="font-size:13px;color:var(--text2)">Salary details is portal par abhi nahi dikhaye ja rahe. Apni salary ki jaankari ke liye admin se sampark karein.</div>
+      </div>
+
+      <div class="card">
+        <div class="sec-t">📅 Day-wise Detail</div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Date</th><th>Status</th><th>IN</th><th>OUT</th></tr></thead>
+            <tbody id="dayRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">Varnica Jewels · Staff Portal<br>Questions about your attendance? Please speak to the admin.</div>
+</div>
+
+<script>
+const TOOL_ID='T009';
+const params=new URLSearchParams(location.search);
+const STAFF_ID=params.get('id')||'';
+let TOKEN=sessionStorage.getItem('vjsp_token')||'';
+let periodMode='this';
+
+// ══════════════════════════════════════════════
+// SALARY RULES — must stay identical to the admin app
+// ══════════════════════════════════════════════
+function toKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function addDaysToKey(dateStr,delta){const d=new Date(dateStr+'T00:00:00');d.setDate(d.getDate()+delta);return toKey(d);}
+function getCalendarDaysInMonth(ym){const p=ym.split('-').map(Number);return new Date(p[0],p[1],0).getDate();}
+function getDailyRate(staff,dateStr){
+  if(!staff.salary)return 0;
+  if(staff.salaryBasis==='yearly')return staff.salary/365;
+  return staff.salary/getCalendarDaysInMonth(dateStr.substring(0,7));
+}
+function isWeekOff(date,st){return date.getDay()===parseInt(st.weekOff||0);}
+function isHoliday(ds,st){return (st.holidays||[]).some(h=>h.date===ds);}
+function isAbsentWorkDay(dateStr,recMap,st){
+  if(isWeekOff(new Date(dateStr+'T00:00:00'),st)||isHoliday(dateStr,st))return false;
+  const rec=recMap[dateStr];
+  return !rec||!rec.inTime;
+}
+function isSandwichedOff(dateStr,recMap,st){
+  return isAbsentWorkDay(addDaysToKey(dateStr,-1),recMap,st)&&isAbsentWorkDay(addDaysToKey(dateStr,1),recMap,st);
+}
+function getDatesInRange(from,to){
+  const out=[];let cur=new Date(from+'T00:00:00');const end=new Date(to+'T00:00:00');
+  while(cur<=end){out.push(toKey(cur));cur=new Date(cur.getTime()+86400000);}
+  return out;
+}
+function computeSummary(staff,st,records,from,to){
+  const recMap={};records.forEach(r=>{recMap[r.date]=r;});
+  const dates=getDatesInRange(from,to);
+  let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0;
+  let extraDays=0,paidOffDays=0,unpaidOffDays=0,grossEarned=0;
+  const rows=[];
+  dates.forEach(d=>{
+    const isWO=isWeekOff(new Date(d+'T00:00:00'),st),isHol=isHoliday(d,st);
+    const rec=recMap[d];
+    const rate=getDailyRate(staff,d);
+    if(isWO||isHol){
+      const worked=!!(rec&&rec.inTime);
+      const sandwiched=!worked&&isSandwichedOff(d,recMap,st);
+      if(sandwiched){
+        unpaidOffDays++;
+        rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',reason:'Unpaid (absent both sides)'});
+      }else{
+        paidOffDays++;grossEarned+=rate;
+        if(worked){
+          extraDays++;grossEarned+=rate;
+          rows.push({date:d,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',reason:rec.reason||'Worked on off-day'});
+        }else{
+          rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',reason:''});
+        }
+      }
+      return;
+    }
+    workDays++;
+    if(!rec||!rec.inTime){
+      absent++;
+      rows.push({date:d,status:'Absent',inTime:'-',outTime:'-',reason:rec&&rec.reason?rec.reason:''});
+    }else{
+      if(rec.status==='Late')late++;
+      if(rec.status==='Half Day')halfDay++;
+      if(rec.status==='Overtime')overtime++;
+      if(rec.status==='Early Out')earlyOut++;
+      if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;
+      grossEarned+=(rec.status==='Half Day')?rate*0.5:rate;
+      rows.push({date:d,status:rec.status||'Present',inTime:rec.inTime,outTime:rec.outTime||'-',reason:rec.reason||''});
+    }
+  });
+  const totalPayingDays=present+halfDay*0.5+paidOffDays+extraDays;
+  const refDailyRate=dates.length?getDailyRate(staff,dates[0]):0;
+  const pfOn=staff.pf!==0;
+  const esiOn=staff.esi!==0&&staff.salary&&staff.salary<=(st.esiCeiling||21000);
+  const pfAmount=pfOn?Math.round(grossEarned*(st.pfRate||12)/100):0;
+  const esiAmount=esiOn?Math.round(grossEarned*(st.esiRate||0.75)/100):0;
+  const netPay=Math.round(grossEarned-pfAmount-esiAmount);
+  return{present,absent,late,halfDay,overtime,earlyOut,workDays,extraDays,paidOffDays,unpaidOffDays,
+    totalPayingDays,refDailyRate,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,rows};
+}
+
+// ══════════════════════════════════════════════
+// UI
+// ══════════════════════════════════════════════
+function inr(n){return '₹'+Number(n).toLocaleString('en-IN');}
+function fmtDate(ds){
+  const d=new Date(ds+'T00:00:00');
+  return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})+' ('+d.toLocaleDateString('en-IN',{weekday:'short'})+')';
+}
+function statusColor(s){
+  if(s==='Absent')return 'var(--red)';
+  if(s==='Late'||s==='Early Out'||s==='Half Day')return 'var(--orange)';
+  if(s==='Extra Day')return '#8B6A35';
+  if(s==='Present'||s==='Overtime')return 'var(--green)';
+  return 'var(--text3)';
+}
+function showErr(msg){
+  const e=document.getElementById('loginErr');
+  e.textContent=msg;e.style.display='block';
+}
+async function login(){
+  const pin=document.getElementById('pin').value.trim();
+  if(!pin){showErr('Please enter your PIN.');return;}
+  if(!STAFF_ID){showErr('This link is incomplete. Please ask the admin to send your personal link again.');return;}
+  try{
+    const res=await fetch('/api/staff-portal/login',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({bucket:TOOL_ID,staffId:STAFF_ID,pin})
+    });
+    const j=await res.json();
+    if(!res.ok||!j.ok){showErr(j.error||'Could not log in.');return;}
+    TOKEN=j.token;sessionStorage.setItem('vjsp_token',TOKEN);
+    document.getElementById('pin').value='';
+    openDash();
+  }catch(e){showErr('Network problem. Please check your internet and try again.');}
+}
+function logout(){
+  TOKEN='';sessionStorage.removeItem('vjsp_token');
+  document.getElementById('dash').classList.add('hidden');
+  document.getElementById('outBtn').classList.add('hidden');
+  document.getElementById('loginBox').classList.remove('hidden');
+  document.getElementById('loginErr').style.display='none';
+}
+function periodRange(){
+  const now=new Date();
+  let y=now.getFullYear(),m=now.getMonth();
+  if(periodMode==='last'){m--;if(m<0){m=11;y--;}}
+  const first=new Date(y,m,1);
+  const last=new Date(y,m+1,0);
+  const today=toKey(now);
+  let to=toKey(last);
+  if(periodMode==='this'&&today<to)to=today;
+  return{from:toKey(first),to,label:first.toLocaleDateString('en-IN',{month:'long',year:'numeric'})};
+}
+function setPeriod(mode){
+  periodMode=mode;
+  document.getElementById('tabThis').classList.toggle('on',mode==='this');
+  document.getElementById('tabLast').classList.toggle('on',mode==='last');
+  loadData();
+}
+function openDash(){
+  document.getElementById('loginBox').classList.add('hidden');
+  document.getElementById('dash').classList.remove('hidden');
+  document.getElementById('outBtn').classList.remove('hidden');
+  loadData();
+}
+async function loadData(){
+  const r=periodRange();
+  document.getElementById('periodLbl').textContent=r.label;
+  document.getElementById('loading').classList.remove('hidden');
+  document.getElementById('content').classList.add('hidden');
+  try{
+    const res=await fetch('/api/staff-portal/me?from='+r.from+'&to='+r.to,{headers:{'Authorization':'Bearer '+TOKEN}});
+    if(res.status===401){logout();showErr('Your session expired. Please enter your PIN again.');return;}
+    const j=await res.json();
+    if(!res.ok||!j.ok){document.getElementById('loading').textContent=j.error||'Could not load.';return;}
+    render(j,r);
+  }catch(e){
+    document.getElementById('loading').textContent='Network problem. Please try again.';
+  }
+}
+function render(j,r){
+  const s=computeSummary(j.staff,j.settings,j.records,r.from,r.to);
+  document.getElementById('myName').textContent=j.staff.name;
+  document.getElementById('myRole').textContent=j.staff.role||'Staff';
+
+  document.getElementById('sPresent').textContent=s.present;
+  document.getElementById('sAbsent').textContent=s.absent;
+  document.getElementById('sLate').textContent=s.late;
+  document.getElementById('sEarly').textContent=s.earlyOut;
+  document.getElementById('sHalf').textContent=s.halfDay;
+  document.getElementById('sOT').textContent=s.overtime;
+
+  document.getElementById('cPresent').textContent=s.present;
+  document.getElementById('cHalf').textContent=s.halfDay?(s.halfDay+' = '+(s.halfDay*0.5)):'0';
+  document.getElementById('cOff').textContent=s.paidOffDays;
+  document.getElementById('cExtra').textContent=s.extraDays;
+  document.getElementById('cTotal').textContent=s.totalPayingDays;
+
+  const un=document.getElementById('unpaidNote');
+  if(s.unpaidOffDays){
+    un.textContent='Note: '+s.unpaidOffDays+' week-off/holiday was not paid because of absence on both the day before and the day after.';
+    un.classList.remove('hidden');
+  }else un.classList.add('hidden');
+
+  if(j.showSalary!==false&&j.staff.salary){
+    document.getElementById('salaryCard').classList.remove('hidden');
+    document.getElementById('salaryOff').classList.add('hidden');
+    document.getElementById('basisLbl').textContent='('+(j.staff.salaryBasis==='yearly'?'Per Year':'Per Month')+')';
+    document.getElementById('mFixed').textContent=inr(j.staff.salary);
+    document.getElementById('mRate').textContent=inr(Math.round(s.refDailyRate));
+    document.getElementById('mDays').textContent='× '+s.totalPayingDays;
+    document.getElementById('mGross').textContent=inr(s.grossEarned);
+    document.getElementById('pfRow').classList.toggle('hidden',!s.pfOn);
+    document.getElementById('esiRow').classList.toggle('hidden',!s.esiOn);
+    if(s.pfOn)document.getElementById('mPF').textContent='− '+inr(s.pfAmount);
+    if(s.esiOn)document.getElementById('mESI').textContent='− '+inr(s.esiAmount);
+    document.getElementById('mNet').textContent=inr(s.netPay);
+  }else{
+    document.getElementById('salaryCard').classList.add('hidden');
+    document.getElementById('salaryOff').classList.remove('hidden');
+  }
+
+  document.getElementById('dayRows').innerHTML=s.rows.slice().reverse().map(function(row){
+    return '<tr><td class="mono">'+fmtDate(row.date)+'</td>'+
+      '<td style="color:'+statusColor(row.status)+';font-weight:600">'+row.status+
+      (row.reason?'<div class="rsn">'+String(row.reason).replace(/[<>&]/g,'')+'</div>':'')+'</td>'+
+      '<td class="mono">'+(row.inTime||'-')+'</td>'+
+      '<td class="mono">'+(row.outTime||'-')+'</td></tr>';
+  }).join('');
+
+  document.getElementById('loading').classList.add('hidden');
+  document.getElementById('content').classList.remove('hidden');
+}
+document.getElementById('pin').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
+if(TOKEN)openDash();
+</script>
+</body>
+</html>
