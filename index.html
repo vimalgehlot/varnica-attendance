@@ -2244,25 +2244,30 @@ function generateReport(){
   const prevDates=getDatesInRange(toKey(prevFrom),toKey(prevTo));
   const target=sf?staff.filter(s=>s.id===sf):staff;const summaries=[];
   target.forEach(s=>{
-    let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0,extraDays=0,grossEarned=0,extraPay=0,unpaidOffDays=0;const rows=[];
+    let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0,extraDays=0,grossEarned=0,extraPay=0,unpaidOffDays=0,paidOffDays=0;const rows=[];
     dates.forEach(d=>{
       const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
       const dailyRate=getDailyRate(s,d);
       if(isWO||isHol){
-        if(rec&&rec.inTime){
-          // Worked on a week-off/holiday: gets BOTH the normal paid-rest-day amount AND a full
-          // extra bonus on top — 2x total. Independent of the sandwich rule since they came in and worked.
-          extraDays++;
-          const dayPay=Math.round(dailyRate);
-          extraPay+=dayPay;grossEarned+=dayPay*2;
-          rows.push({date:d,staffId:s.id,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+        const worked=!!(rec&&rec.inTime);
+        // Sandwich rule only forfeits the REST-DAY credit of an unworked off-day
+        const sandwiched=!worked&&isSandwichedOff(s.id,d,att);
+        if(sandwiched){
+          unpaidOffDays++;
+          rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:'⚠️ Unpaid — absent both sides'});
         }else{
-          // Not worked — paid by default, unless sandwiched by Absence on both adjacent days
-          const sandwiched=isSandwichedOff(s.id,d,att);
-          if(sandwiched)unpaidOffDays++;
-          else grossEarned+=dailyRate;
-          rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:sandwiched?'⚠️ Unpaid — absent both sides':''});
+          // Rest-day credit — every week-off/holiday counts here, worked or not
+          paidOffDays++;grossEarned+=dailyRate;
+          if(worked){
+            // Worked on it too → one ADDITIONAL day's pay on top of the rest-day credit
+            extraDays++;
+            const dayPay=Math.round(dailyRate);
+            extraPay+=dayPay;grossEarned+=dailyRate;
+            rows.push({date:d,staffId:s.id,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked, 2 days pay)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+          }else{
+            rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});
+          }
         }
         return;
       }
@@ -2280,7 +2285,12 @@ function generateReport(){
     });
     const settings=getSettings();
     const payableDays=present+halfDay*0.5;
-    const perDaySalary=payableDays>0?(grossEarned-extraPay)/payableDays:0; // effective average rate for display only
+    // Total Paying Days = every day-equivalent that actually contributed to Gross —
+    // present days + half-days(0.5 each) + paid week-off/holiday days + extra days worked (2 each, since they're double-paid).
+    // Multiplying this by the daily rate reproduces Gross exactly, so it's the number that makes Net Pay "make sense" at a glance.
+    const totalPayingDays=present+halfDay*0.5+paidOffDays+extraDays;
+    // A representative daily rate for display — based on the report's first date's month (constant for single-month reports, which is the normal case)
+    const refDailyRate=dates.length?getDailyRate(s,dates[0]):0;
     const pfOn=s.pf!==0;const esiOn=s.esi!==0&&s.salary&&s.salary<=settings.esiCeiling;
     const pfAmount=pfOn?Math.round(grossEarned*settings.pfRate/100):0;
     const esiAmount=esiOn?Math.round(grossEarned*settings.esiRate/100):0;
@@ -2289,7 +2299,7 @@ function generateReport(){
     const isOverride=!!override;
     if(isOverride)netPay=Math.round(override.amount);
     const prevPct=computeQuickPct(s.id,prevDates,att);
-    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,extraDays,extraPay,unpaidOffDays,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,perDaySalary,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,prevPct,isOverride});
+    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,extraDays,extraPay,unpaidOffDays,paidOffDays,totalPayingDays,refDailyRate,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,prevPct,isOverride});
   });
   lastReportData=summaries;
   lastDayWiseData=buildDayWiseData(dates,target,att);
@@ -2511,9 +2521,11 @@ function renderStaffWiseTable(summaries){
     const overrideHtml=s.isOverride
       ? `<span class="htag" style="background:rgba(184,149,90,0.25);color:#8a6a2f;font-weight:700">✏️ Manually Set</span> <button class="row-action-btn" style="padding:3px 8px;font-size:10px" onclick="event.stopPropagation();removeSalaryOverride('${s.staff.id}')">↩️ Revert to Calculated</button>`
       : `<button class="row-action-btn" style="padding:3px 8px;font-size:10px" onclick="event.stopPropagation();promptSalaryOverride('${s.staff.id}')">✏️ Set Manually</button>`;
+    const daysFormula=[s.present+' Present',s.halfDay?s.halfDay+' Half':'',s.paidOffDays?s.paidOffDays+' Week-off/Holiday':'',s.extraDays?s.extraDays+' Worked on Off-day':''].filter(Boolean).join(' + ');
+    const basisShort=s.staff.salaryBasis==='yearly'?'/yr':'/mo';
     const payrollHtml=s.staff.salary?(salaryRevealed
-      ? `<div class="row-payroll"><span class="htag" style="background:var(--blush2)">📅 ${s.payableDays}/${s.workDays}d</span>${s.extraDays?'<span class="htag" style="background:rgba(184,149,90,0.2);color:#b8955a;font-weight:700">➕ '+s.extraDays+' extra day'+(s.extraDays>1?'s':'')+' (+₹'+s.extraPay.toLocaleString('en-IN')+')</span>':''}${s.unpaidOffDays?'<span class="htag" style="background:rgba(196,75,53,0.15);color:var(--red)">🚫 '+s.unpaidOffDays+' unpaid off-day'+(s.unpaidOffDays>1?'s':'')+' (sandwiched)</span>':''}<span class="htag" style="background:var(--blush2)">Gross ₹${s.grossEarned.toLocaleString('en-IN')}</span>${s.pfOn?'<span class="htag" style="background:var(--blush2)">PF −₹'+s.pfAmount.toLocaleString('en-IN')+'</span>':''}${s.esiOn?'<span class="htag" style="background:var(--blush2)">ESI −₹'+s.esiAmount.toLocaleString('en-IN')+'</span>':''}<span class="htag" style="background:var(--green);color:#fff;font-weight:700">Net ₹${s.netPay.toLocaleString('en-IN')}</span><br>${overrideHtml}</div>`
-      : `<div class="row-payroll"><span class="htag" style="background:var(--blush2)">📅 ${s.payableDays}/${s.workDays}d</span><span class="htag" style="background:var(--blush2)">🔒 Salary hidden — tap "Show Salary" above</span></div>`
+      ? `<div class="row-payroll"><span class="htag" style="background:rgba(74,143,74,0.12);font-weight:700">💼 Fixed ₹${Number(s.staff.salary).toLocaleString('en-IN')}${basisShort}</span><span class="htag" style="background:var(--blush2)">📅 ₹${Math.round(s.refDailyRate).toLocaleString('en-IN')}/day</span><span class="htag" style="background:rgba(74,143,74,0.15);color:var(--green);font-weight:700">🧮 ${s.totalPayingDays} Paying Days (${daysFormula})</span>${s.unpaidOffDays?'<span class="htag" style="background:rgba(196,75,53,0.15);color:var(--red)">🚫 '+s.unpaidOffDays+' unpaid off-day'+(s.unpaidOffDays>1?'s':'')+' (sandwiched)</span>':''}<span class="htag" style="background:var(--blush2);font-weight:700">Gross ₹${s.grossEarned.toLocaleString('en-IN')}</span>${s.pfOn?'<span class="htag" style="background:var(--blush2)">PF −₹'+s.pfAmount.toLocaleString('en-IN')+'</span>':''}${s.esiOn?'<span class="htag" style="background:var(--blush2)">ESI −₹'+s.esiAmount.toLocaleString('en-IN')+'</span>':''}<span class="htag" style="background:var(--green);color:#fff;font-weight:700">Net ₹${s.netPay.toLocaleString('en-IN')}</span><br>${overrideHtml}</div>`
+      : `<div class="row-payroll"><span class="htag" style="background:var(--blush2)">🧮 ${s.totalPayingDays} Paying Days</span><span class="htag" style="background:var(--blush2)">🔒 Salary hidden — tap "Show Salary" above</span></div>`
     ):'';
     const actionsHtml=`<div class="row-actions"><button class="row-action-btn" onclick="whatsappShareSummary('${s.staff.id}')">💬 WhatsApp</button>${s.staff.salary?`<button class="row-action-btn" onclick="downloadPayslipPDF('${s.staff.id}')">📄 PDF Slip</button>`:''}</div>`;
     return `<details class="report-row"><summary>
@@ -2569,8 +2581,18 @@ function renderMiniTable(rows,firstColLabel){
 }
 function exportPayrollCSV(){
   if(!lastReportData||!lastReportData.length){showToast('Pehle report generate karo');return;}
-  const rows=[['Name','Role','Working Days','Present','Half Day','Absent','Extra Days (Off-day worked)','Extra Pay','Payable Days','Per Day Salary','Gross Earned','PF Deduction','ESI Deduction','Net Pay']];
-  lastReportData.forEach(s=>{rows.push([s.staff.name,s.staff.role||'',s.workDays,s.present,s.halfDay,s.absent,s.extraDays||0,s.extraPay||0,s.payableDays,s.perDaySalary?s.perDaySalary.toFixed(2):0,s.grossEarned,s.pfAmount,s.esiAmount,s.netPay]);});
+  const rows=[['Name','Role','Salary Basis','Fixed Salary (₹)','Daily Rate (₹)','Working Days','Present','Late','Early Out','Overtime','Half Day','Absent','Paid Week-off/Holiday','Unpaid Week-off/Holiday','Worked on Off-day (extra)','Total Paying Days','Gross Earned (₹)','Off-day Pay Included (₹)','PF Deduction (₹)','ESI Deduction (₹)','Net Pay (₹)','Manually Overridden?']];
+  lastReportData.forEach(s=>{rows.push([
+    s.staff.name,s.staff.role||'',
+    s.staff.salaryBasis==='yearly'?'Per Year':'Per Month',
+    s.staff.salary||0,
+    s.refDailyRate?s.refDailyRate.toFixed(2):0,
+    s.workDays,s.present,s.late,s.earlyOut,s.overtime,s.halfDay,s.absent,
+    s.paidOffDays||0,s.unpaidOffDays||0,s.extraDays||0,
+    s.totalPayingDays,
+    s.grossEarned,s.extraPay||0,s.pfAmount,s.esiAmount,s.netPay,
+    s.isOverride?'Yes':'No'
+  ]);});
   dlCSV(rows,'varnica_payroll.csv');
 }
 function exportReportCSV(){if(!lastReportData.length){showToast('Generate report first');return;}const rows=[['Staff','Role','Date','Status','IN','OUT','Hours','Reason']];lastReportData.forEach(s=>{s.rows.forEach(r=>{rows.push([s.staff.name,s.staff.role||'',r.date,r.status,r.inTime,r.outTime,r.hours,r.reason]);});});dlCSV(rows,'varnica_report.csv');}
@@ -2632,23 +2654,42 @@ function drawPayslipPage(doc,s,pl){
   y+=17;
   if(s.staff.salary){
     const settings=getSettings();
+    const basisLabel=s.staff.salaryBasis==='yearly'?'Per Year':'Per Month';
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(92,66,32);
     doc.text('Earnings & Deductions',M,y);y+=4;
     const halfW=W/2;
     doc.setDrawColor(232,212,200);doc.rect(M,y,W,28);doc.line(M+halfW,y,M+halfW,y+28);
+    // ── Left: fixed salary + what was actually earned ──
     doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
-    doc.text('Gross Earned',M+4,y+6);
+    doc.text('Fixed Salary ('+basisLabel+')',M+4,y+6);
     doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
-    doc.text('Rs '+s.grossEarned.toLocaleString('en-IN'),M+4,y+11);
-    if(s.extraDays){doc.setFont('helvetica','italic');doc.setFontSize(6.5);doc.setTextColor(184,149,90);doc.text('(incl. '+s.extraDays+' extra day'+(s.extraDays>1?'s':'')+' worked on off-day: Rs '+s.extraPay.toLocaleString('en-IN')+')',M+4,y+15);}
-    doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
-    doc.text('PF ('+settings.pfRate+'%)',M+halfW+4,y+6);
+    doc.text('Rs '+Number(s.staff.salary).toLocaleString('en-IN'),M+4,y+11);
+    doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(122,92,58);
+    doc.text('Daily Rate: Rs '+Math.round(s.refDailyRate).toLocaleString('en-IN')+'  x  '+s.totalPayingDays+' paying days',M+4,y+16);
+    doc.setFontSize(8.5);doc.setTextColor(122,92,58);
+    doc.text('Gross Earned',M+4,y+21);
     doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
-    doc.text('Rs '+(s.pfOn?s.pfAmount:0).toLocaleString('en-IN'),M+halfW+4,y+11);
-    doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
-    doc.text('ESI ('+settings.esiRate+'%)',M+halfW+4,y+17);
-    doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
-    doc.text('Rs '+(s.esiOn?s.esiAmount:0).toLocaleString('en-IN'),M+halfW+4,y+22);
+    doc.text('Rs '+s.grossEarned.toLocaleString('en-IN'),M+4,y+26);
+    // ── Right: only the deductions that actually apply ──
+    let dy=6;
+    if(s.pfOn){
+      doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
+      doc.text('PF ('+settings.pfRate+'%)',M+halfW+4,y+dy);
+      doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
+      doc.text('Rs '+s.pfAmount.toLocaleString('en-IN'),M+halfW+4,y+dy+5);
+      dy+=11;
+    }
+    if(s.esiOn){
+      doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(122,92,58);
+      doc.text('ESI ('+settings.esiRate+'%)',M+halfW+4,y+dy);
+      doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
+      doc.text('Rs '+s.esiAmount.toLocaleString('en-IN'),M+halfW+4,y+dy+5);
+      dy+=11;
+    }
+    if(!s.pfOn&&!s.esiOn){
+      doc.setFontSize(8.5);doc.setFont('helvetica','italic');doc.setTextColor(150,120,90);
+      doc.text('No deductions applicable',M+halfW+4,y+8);
+    }
     y+=34;
     doc.setFillColor(74,140,92);doc.rect(M,y,W,14,'F');
     doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(12);
@@ -2683,8 +2724,25 @@ function downloadFullPayrollPDF(){
 function whatsappShareSummary(staffId){
   const s=lastReportData.find(x=>x.staff.id===staffId);
   if(!s){showToast('Pehle report generate karo');return;}
-  let msg='*Varnica Jewels \u2014 Attendance Summary*\n'+s.staff.name+' ('+(s.staff.role||'')+')\nPeriod: '+periodLabel()+'\n\n\u2705 Present: '+s.present+'\n\u274c Absent: '+s.absent+'\n\u23f0 Late: '+s.late+'\n\ud83d\udd36 Half Day: '+s.halfDay+'\n\ud83d\udcca Attendance: '+s.pct+'%';
-  if(s.staff.salary)msg+='\n\n\ud83d\udcb0 Net Pay: \u20b9'+s.netPay.toLocaleString('en-IN');
+  let msg='*Varnica Jewels — Attendance Summary*\n'+s.staff.name+' ('+(s.staff.role||'')+')\nPeriod: '+periodLabel()+'\n\n';
+  msg+='✅ Present: '+s.present+' (⏰Late: '+s.late+', 🌅Early: '+s.earlyOut+', 🔵OT: '+s.overtime+')\n';
+  msg+='🔶 Half Day: '+s.halfDay+'\n❌ Absent: '+s.absent+'\n📊 Attendance: '+s.pct+'%';
+  if(s.staff.salary){
+    msg+='\n\n*— Salary Breakdown —*';
+    msg+='\n💼 Fixed Salary: ₹'+Number(s.staff.salary).toLocaleString('en-IN')+' ('+(s.staff.salaryBasis==='yearly'?'Per Year':'Per Month')+')';
+    msg+='\n📅 Daily Rate: ₹'+Math.round(s.refDailyRate).toLocaleString('en-IN');
+    msg+='\n\n🧮 Total Paying Days: '+s.totalPayingDays;
+    msg+='\n   • Present/Late/OT/Early: '+s.present+' day'+(s.present===1?'':'s');
+    if(s.halfDay)msg+='\n   • Half Day: '+s.halfDay+' × 0.5 = '+(s.halfDay*0.5);
+    if(s.paidOffDays)msg+='\n   • Week-off/Holiday: '+s.paidOffDays;
+    if(s.unpaidOffDays)msg+='\n   • Unpaid Week-off (sandwiched): '+s.unpaidOffDays+' (not counted)';
+    if(s.extraDays)msg+='\n   • Worked on Off-day (extra): '+s.extraDays;
+    msg+='\n\n💰 Gross Salary: ₹'+s.grossEarned.toLocaleString('en-IN');
+    if(s.pfOn)msg+='\n➖ PF: ₹'+s.pfAmount.toLocaleString('en-IN');
+    if(s.esiOn)msg+='\n➖ ESI: ₹'+s.esiAmount.toLocaleString('en-IN');
+    msg+='\n\n*✅ Net Pay: ₹'+s.netPay.toLocaleString('en-IN')+'*';
+    if(s.isOverride)msg+=' (manually set)';
+  }
   window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
 }
 
@@ -2918,9 +2976,15 @@ function toggleManFields(){
   document.getElementById('manTimeRow').style.display=(t==='late_in'||t==='early_out'||t==='regular')?'grid':'none';
   const reasonRow=document.getElementById('manReasonRow');
   reasonRow.style.display=t?'block':'none';
-  // Regular Punch mein reason optional — asterisk hataao
   const reasonLbl=reasonRow.querySelector('label');
-  if(reasonLbl)reasonLbl.innerHTML=t==='regular'?'Reason (optional)':'Reason <span style="color:var(--red)">*</span>';
+  const reasonInp=document.getElementById('manReason');
+  if(t==='regular'){
+    if(reasonLbl)reasonLbl.innerHTML='📝 Reason / Note (optional)';
+    if(reasonInp)reasonInp.placeholder='e.g. forgot to punch, camera issue, on-site work...';
+  }else{
+    if(reasonLbl)reasonLbl.innerHTML='📝 Reason <span style="color:var(--red)">*</span>';
+    if(reasonInp)reasonInp.placeholder='Reason is required for this entry type';
+  }
   document.getElementById('manErrMsg').style.display='none';
 }
 function loadManRec(){
@@ -2931,8 +2995,11 @@ function loadManRec(){
   if(rec){cd.style.display='block';ct.textContent=rec.status+' | IN:'+(rec.inTime||'--')+' OUT:'+(rec.outTime||'--')+(rec.reason?' | '+rec.reason:'');
     if(rec.inTime)document.getElementById('manInTime').value=rec.inTime.substring(0,5);
     if(rec.outTime)document.getElementById('manOutTime').value=rec.outTime.substring(0,5);
+    // Prefill existing reason so editing doesn't silently erase it
+    const existingReason=rec.reason||rec.earlyOutReason||rec.absentReason||'';
+    if(existingReason&&existingReason!=='(skipped)')document.getElementById('manReason').value=existingReason;
     undoBtn.style.display=rec.outTime?'block':'none';
-  }else{cd.style.display='none';undoBtn.style.display='none';}
+  }else{cd.style.display='none';undoBtn.style.display='none';document.getElementById('manReason').value='';}
   const card=document.getElementById('manLogCard'),list=document.getElementById('manLogList');
   const recs=getAtt().filter(a=>a.staffId===sid).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8);
   if(recs.length){card.style.display='block';
