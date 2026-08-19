@@ -2581,17 +2581,16 @@ function renderMiniTable(rows,firstColLabel){
 }
 function exportPayrollCSV(){
   if(!lastReportData||!lastReportData.length){showToast('Pehle report generate karo');return;}
-  const rows=[['Name','Role','Salary Basis','Fixed Salary (₹)','Daily Rate (₹)','Working Days','Present','Late','Early Out','Overtime','Half Day','Absent','Paid Week-off/Holiday','Unpaid Week-off/Holiday','Worked on Off-day (extra)','Total Paying Days','Gross Earned (₹)','Off-day Pay Included (₹)','PF Deduction (₹)','ESI Deduction (₹)','Net Pay (₹)','Manually Overridden?']];
+  const rows=[['Name','Role','Salary Basis','Fixed Salary (₹)','Daily Rate (₹)','Working Days','Late','Early Out','Overtime','Absent','Unpaid Week-off/Holiday','Present','Half Day','Week-off/Holiday','Worked on Off-day','TOTAL PAYING DAYS','Gross Earned (₹)','PF Deduction (₹)','ESI Deduction (₹)','Net Pay (₹)']];
   lastReportData.forEach(s=>{rows.push([
     s.staff.name,s.staff.role||'',
     s.staff.salaryBasis==='yearly'?'Per Year':'Per Month',
     s.staff.salary||0,
     s.refDailyRate?s.refDailyRate.toFixed(2):0,
-    s.workDays,s.present,s.late,s.earlyOut,s.overtime,s.halfDay,s.absent,
-    s.paidOffDays||0,s.unpaidOffDays||0,s.extraDays||0,
+    s.workDays,s.late,s.earlyOut,s.overtime,s.absent,s.unpaidOffDays||0,
+    s.present,s.halfDay,s.paidOffDays||0,s.extraDays||0,
     s.totalPayingDays,
-    s.grossEarned,s.extraPay||0,s.pfAmount,s.esiAmount,s.netPay,
-    s.isOverride?'Yes':'No'
+    s.grossEarned,s.pfAmount,s.esiAmount,s.netPay
   ]);});
   dlCSV(rows,'varnica_payroll.csv');
 }
@@ -2641,8 +2640,8 @@ function drawPayslipPage(doc,s,pl){
   y+=27;
   doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(92,66,32);
   doc.text('Attendance Summary \u2014 '+pl,M,y);y+=4;
-  const cols=['Working Days','Present','Late','Half Day','Early Out','Overtime','Absent','Payable Days','Attendance %'];
-  const vals=[s.workDays,s.present,s.late,s.halfDay,s.earlyOut,s.overtime,s.absent,s.payableDays,s.pct+'%'];
+  const cols=['Working Days','Present','Late','Half Day','Early Out','Overtime','Absent','Attendance %'];
+  const vals=[s.workDays,s.present,s.late,s.halfDay,s.earlyOut,s.overtime,s.absent,s.pct+'%'];
   const colW=W/cols.length;
   doc.setFillColor(92,66,32);doc.rect(M,y,W,10,'F');
   doc.setTextColor(255,255,255);doc.setFontSize(6.6);doc.setFont('helvetica','bold');
@@ -2651,7 +2650,41 @@ function drawPayslipPage(doc,s,pl){
   doc.setFillColor(235,245,238);doc.rect(M,y,W,8,'F');
   doc.setTextColor(44,26,10);doc.setFontSize(9);doc.setFont('helvetica','bold');
   vals.forEach((v,i)=>{doc.text(String(v),M+i*colW+colW/2,y+5.5,{align:'center'});});
-  y+=17;
+  y+=15;
+  // ── Paying Days Calculation — shows exactly how the total was reached ──
+  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(92,66,32);
+  doc.text('Paying Days Calculation',M,y);y+=4;
+  const pdCols=['Present','Half Day (x0.5)','Week-off / Holiday','Worked on Off-day','TOTAL PAYING DAYS'];
+  const pdVals=[s.present,(s.halfDay?s.halfDay+' = '+(s.halfDay*0.5):'0'),s.paidOffDays||0,s.extraDays||0,s.totalPayingDays];
+  const pdW=W/pdCols.length;
+  doc.setFillColor(232,212,200);doc.rect(M,y,W,9,'F');
+  doc.setFillColor(184,149,90);doc.rect(M+4*pdW,y,pdW,9,'F');
+  doc.setFontSize(6.4);doc.setFont('helvetica','bold');
+  pdCols.forEach((c,i)=>{
+    doc.setTextColor(i===4?255:92,i===4?255:66,i===4?255:32);
+    const lines=doc.splitTextToSize(c,pdW-2);
+    doc.text(lines,M+i*pdW+pdW/2,y+3.4,{align:'center'});
+  });
+  y+=9;
+  doc.setFillColor(250,245,240);doc.rect(M,y,W,9,'F');
+  doc.setFillColor(245,235,215);doc.rect(M+4*pdW,y,pdW,9,'F');
+  doc.setDrawColor(232,212,200);doc.rect(M,y-9,W,18);
+  doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(44,26,10);
+  pdVals.forEach((v,i)=>{
+    if(i===4){doc.setFontSize(11);doc.setTextColor(92,66,32);}
+    doc.text(String(v),M+i*pdW+pdW/2,y+6,{align:'center'});
+    if(i===4){doc.setFontSize(9);doc.setTextColor(44,26,10);}
+  });
+  // plus signs between the four components
+  doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(150,120,90);
+  [1,2,3].forEach(i=>{doc.text('+',M+i*pdW,y+6,{align:'center'});});
+  doc.text('=',M+4*pdW,y+6,{align:'center'});
+  y+=16;
+  if(s.unpaidOffDays){
+    doc.setFont('helvetica','italic');doc.setFontSize(7);doc.setTextColor(196,75,53);
+    doc.text('Note: '+s.unpaidOffDays+' week-off/holiday not paid (absent on both adjacent days).',M,y);
+    y+=5;
+  }
   if(s.staff.salary){
     const settings=getSettings();
     const basisLabel=s.staff.salaryBasis==='yearly'?'Per Year':'Per Month';
