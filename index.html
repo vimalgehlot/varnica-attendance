@@ -726,6 +726,10 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="btn" onclick="deepCleanStorage()" style="margin-top:6px;width:100%;background:var(--red);color:#fff">🧨 Deep Clean (agar storage 4 MB+ ho)</button>
       <div style="font-size:11px;color:var(--text3);margin-top:8px">Optimize = photos compress. Deep Clean = queue + logs + purani photos sab clear. Data safe rahega (VPS pe backup hai).</div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
+        <div><div class="set-lbl">📱 Staff Portal — Salary Dikhao</div><div class="set-sub">ON = staff apne phone par apni Gross/PF/ESI/Net Pay dekh sakta hai. OFF = sirf attendance dikhega, salary ka koi number nahi (server se bhi nahi bheja jayega).</div></div>
+        <label class="switch"><input type="checkbox" id="staffPortalSalaryToggle" onchange="toggleStaffPortalSalary()"><span class="switch-slider"></span></label>
+      </div>
+      <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
         <div><div class="set-lbl">✍️ Late/Absent Reason Compulsory</div><div class="set-sub">ON = staff cannot Skip, reason is required. OFF = a "Skip for now" button appears, reason becomes optional.</div></div>
         <label class="switch"><input type="checkbox" id="reasonCompulsoryToggle" onchange="toggleReasonCompulsory()"><span class="switch-slider"></span></label>
       </div>
@@ -806,6 +810,8 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div class="ig"><label class="il">Salary Amount (₹)</label><input type="number" class="if" id="sSalary" placeholder="e.g. 15000" min="0"></div>
         <div class="ig"><label class="il">Basis</label><select class="if" id="sSalaryBasis"><option value="monthly">Per Month</option><option value="yearly">Per Year</option></select></div>
       </div>
+      <div class="ig"><label class="il">📱 Staff Portal PIN (khali chhodo to portal band rahega)</label><input type="text" class="if" id="sPortalPin" placeholder="e.g. 4826" maxlength="8" autocomplete="off"></div>
+      <div style="display:none"></div>
       <div class="ig"><label class="il">PF Applicable?</label><select class="if" id="sPF"><option value="1">Yes</option><option value="0">No</option></select></div>
     </div>
     <div class="ig"><label class="il">ESI Applicable?</label><select class="if" id="sESI"><option value="1">Yes</option><option value="0">No</option></select></div>
@@ -1191,7 +1197,7 @@ const getStaff=()=>DB.get('staff')||[];
 const setStaff=v=>{if(!DB.set('staff',v)){showToast('❌ Staff save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
 const getAtt=()=>DB.get('att')||[];
 const setAtt=v=>{if(!DB.set('att',v)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
-const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true,singlePunchMode:true,reasonCompulsory:true},DB.get('settings')||{});
+const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true,singlePunchMode:true,reasonCompulsory:true,staffPortalSalary:true},DB.get('settings')||{});
 const setSettings=v=>{if(!DB.set('settings',v)){showToast('❌ Settings save FAIL');return false;}return true;};
 const getPending=()=>DB.get('pending')||[];
 const setPending=v=>DB.set('pending',v);
@@ -1976,6 +1982,14 @@ async function captureFail(){
 // ══════════════════════════════════════════════
 // STAFF
 // ══════════════════════════════════════════════
+function sharePortalLink(staffId){
+  const s=getStaff().find(x=>x.id===staffId);
+  if(!s){showToast('Staff not found');return;}
+  if(!s.portalPin){showToast('Pehle is staff ka Portal PIN set karo');return;}
+  const link=location.origin+'/me.html?id='+encodeURIComponent(s.id);
+  const msg='Namaste '+s.name+' 🙏\n\nAap apni attendance aur salary ka poora hisaab khud dekh sakte ho:\n\n'+link+'\n\nPIN: '+s.portalPin+'\n\n(Ye sirf dekhne ke liye hai — punch office wale device se hi hoga. PIN kisi ko mat batana.)';
+  window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
+}
 function renderStaffList(){
   const searchEl=document.getElementById('staffSearch');
   const term=(searchEl?searchEl.value:'').trim().toLowerCase();
@@ -1986,12 +2000,12 @@ function renderStaffList(){
   if(!allStaff.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">👥</div><p>No staff added yet</p></div>';return;}
   if(!staff.length){el.innerHTML='<div class="empty-state"><p>No staff matching "'+escHtml(term)+'"</p></div>';return;}
   if(typeof renderBirthdayBanner==='function')renderBirthdayBanner();
-  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?(salaryRevealed?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):' &nbsp;🔒 Salary hidden'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions"><button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
+  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?(salaryRevealed?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):' &nbsp;🔒 Salary hidden'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions">${s.portalPin?`<button class="btn-ic" title="Send portal link" onclick="sharePortalLink('${s.id}')">📱</button>`:''}<button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
 }
 function openAddStaff(){
   document.getElementById('editStaffId').value='';document.getElementById('sName').value='';document.getElementById('sRole').value='';
   document.getElementById('sIn').value='09:00';document.getElementById('sOut').value='18:00';
-  document.getElementById('sSalary').value='';document.getElementById('sSalaryBasis').value='monthly';document.getElementById('sPF').value='1';document.getElementById('sESI').value='1';document.getElementById('sDob').value='';
+  document.getElementById('sSalary').value='';document.getElementById('sSalaryBasis').value='monthly';document.getElementById('sPortalPin').value='';document.getElementById('sPF').value='1';document.getElementById('sESI').value='1';document.getElementById('sDob').value='';
   document.getElementById('staffModalTitle').textContent='➕ Add Staff';
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
   openModal('staffModal');startRegCam();
@@ -2000,7 +2014,7 @@ function reRegFace(id){
   const s=getStaff().find(x=>x.id===id);if(!s)return;
   document.getElementById('editStaffId').value=id;document.getElementById('sName').value=s.name;document.getElementById('sRole').value=s.role||'';
   document.getElementById('sIn').value=s.shiftIn;document.getElementById('sOut').value=s.shiftOut;
-  document.getElementById('sSalary').value=s.salary||'';document.getElementById('sSalaryBasis').value=s.salaryBasis||'monthly';document.getElementById('sPF').value=s.pf===0?'0':'1';document.getElementById('sESI').value=s.esi===0?'0':'1';document.getElementById('sDob').value=s.dob||'';
+  document.getElementById('sSalary').value=s.salary||'';document.getElementById('sSalaryBasis').value=s.salaryBasis||'monthly';document.getElementById('sPortalPin').value=s.portalPin||'';document.getElementById('sPF').value=s.pf===0?'0':'1';document.getElementById('sESI').value=s.esi===0?'0':'1';document.getElementById('sDob').value=s.dob||'';
   document.getElementById('staffModalTitle').textContent='📷 Re-register — '+s.name;
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
   openModal('staffModal');startRegCam();
@@ -2023,6 +2037,7 @@ async function saveStaff(){
   const shiftIn=document.getElementById('sIn').value,shiftOut=document.getElementById('sOut').value;
   const salary=parseFloat(document.getElementById('sSalary').value)||0;
   const salaryBasis=document.getElementById('sSalaryBasis').value||'monthly';
+  const portalPin=document.getElementById('sPortalPin').value.trim();
   const pf=parseInt(document.getElementById('sPF').value);
   const esi=parseInt(document.getElementById('sESI').value);
   const dob=document.getElementById('sDob').value||'';
@@ -2032,7 +2047,7 @@ async function saveStaff(){
   if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
   if(!regPhotos.length&&eid){
     const staff=getStaff(),s=staff.find(x=>x.id===eid);
-    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.pf=pf;s.esi=esi;s.dob=dob;}
+    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;}
     setStaff(staff);closeModal('staffModal');stopRegCam();renderStaffList();showToast('Updated!');return;
   }
   _staffSaving=true;
@@ -2050,8 +2065,8 @@ async function saveStaff(){
     const staff=getStaff();
     // Compress photo before storing (240x240 max, JPEG q=0.75) — prevents quota-exceeded
     const smallPhoto=await compressPhoto(regPhotos[0],240,0.75);
-    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.pf=pf;s.esi=esi;s.dob=dob;s.descriptors=descs;s.photo=smallPhoto;}}
-    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,salaryBasis,pf,esi,dob,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString()});
+    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.descriptors=descs;s.photo=smallPhoto;}}
+    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,salaryBasis,portalPin,pf,esi,dob,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString()});
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
     showToast('✅ '+name+' saved with '+descs.length+' face samples!');
   }catch(e){showToast('Error: '+e.message);}
@@ -2134,6 +2149,12 @@ function refreshStorageDisplay(){
   if(sp)sp.checked=getSettings().singlePunchMode!==false;
   const rc=document.getElementById('reasonCompulsoryToggle');
   if(rc)rc.checked=getSettings().reasonCompulsory!==false;
+  const sps=document.getElementById('staffPortalSalaryToggle');
+  if(sps)sps.checked=getSettings().staffPortalSalary!==false;
+}
+function toggleStaffPortalSalary(){
+  const s=getSettings();s.staffPortalSalary=document.getElementById('staffPortalSalaryToggle').checked;setSettings(s);
+  showToast(s.staffPortalSalary?'💰 Staff ab apne portal par salary dekh sakenge':'🔒 Staff portal par salary ab nahi dikhegi — sirf attendance',5000);
 }
 function toggleReasonCompulsory(){
   const s=getSettings();s.reasonCompulsory=document.getElementById('reasonCompulsoryToggle').checked;setSettings(s);
