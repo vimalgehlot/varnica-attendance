@@ -136,15 +136,26 @@ router.get('/me', (req, res) => {
     const staff = (data.staff || []).find(s => String(s.id) === String(claim.staffId));
     if (!staff) return res.status(404).json({ error: 'Staff record not found' });
 
-    // Merge live data + permanent archive, keeping ONLY this staff's rows
+    // Merge live data + permanent archive, keeping ONLY this staff's rows.
+    // IMPORTANT: don't just "fill gaps" — pick whichever version is more complete
+    // (e.g. has outTime), since either source could be the fresher one depending
+    // on sync timing. This is what fixes an OUT-punch sometimes not showing up.
+    function completeness(r) {
+      return (r.inTime ? 1 : 0) + (r.outTime ? 1 : 0) + (r.reason ? 1 : 0) + (r.absentReason ? 1 : 0) + (r.earlyOutReason ? 1 : 0);
+    }
+    function betterOf(a, b) {
+      if (!a) return b;
+      if (!b) return a;
+      return completeness(b) > completeness(a) ? b : a;
+    }
     const map = {};
     (data.att || []).forEach(a => {
-      if (a && String(a.staffId) === String(claim.staffId) && a.date) map[a.date] = a;
+      if (a && String(a.staffId) === String(claim.staffId) && a.date) map[a.date] = betterOf(map[a.date], a);
     });
     const arch = loadArchive(claim.bucket);
     Object.keys(arch).forEach(k => {
       const a = arch[k];
-      if (a && String(a.staffId) === String(claim.staffId) && a.date && !map[a.date]) map[a.date] = a;
+      if (a && String(a.staffId) === String(claim.staffId) && a.date) map[a.date] = betterOf(map[a.date], a);
     });
 
     const from = req.query.from, to = req.query.to;
