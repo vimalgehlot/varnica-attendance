@@ -97,6 +97,7 @@ td{padding:8px 6px;border-bottom:1px solid var(--blush2);vertical-align:top;}
       <div class="tabs">
         <button class="tab on" id="tabThis" onclick="setPeriod('this')">This Month</button>
         <button class="tab" id="tabLast" onclick="setPeriod('last')">Last Month</button>
+        <button class="tab" id="refreshBtn" onclick="loadData()" style="flex:0 0 auto;min-width:44px">🔄</button>
       </div>
       <div style="font-size:12px;color:var(--text2);text-align:center" id="periodLbl"></div>
     </div>
@@ -140,11 +141,6 @@ td{padding:8px 6px;border-bottom:1px solid var(--blush2);vertical-align:top;}
         </div>
         <div class="netbar"><span class="l">NET PAY (Take-Home)</span><span class="n" id="mNet">–</span></div>
         <div class="note">This is an estimate based on your attendance so far in this period.</div>
-      </div>
-
-      <div class="card hidden" id="salaryOff">
-        <div class="sec-t">💰 Salary</div>
-        <div class="note" style="font-size:13px;color:var(--text2)">Salary details is portal par abhi nahi dikhaye ja rahe. Apni salary ki jaankari ke liye admin se sampark karein.</div>
       </div>
 
       <div class="card">
@@ -353,7 +349,6 @@ function render(j,r){
 
   if(j.showSalary!==false&&j.staff.salary){
     document.getElementById('salaryCard').classList.remove('hidden');
-    document.getElementById('salaryOff').classList.add('hidden');
     document.getElementById('basisLbl').textContent='('+(j.staff.salaryBasis==='yearly'?'Per Year':'Per Month')+')';
     document.getElementById('mFixed').textContent=inr(j.staff.salary);
     document.getElementById('mRate').textContent=inr(Math.round(s.refDailyRate));
@@ -366,7 +361,6 @@ function render(j,r){
     document.getElementById('mNet').textContent=inr(s.netPay);
   }else{
     document.getElementById('salaryCard').classList.add('hidden');
-    document.getElementById('salaryOff').classList.remove('hidden');
   }
 
   document.getElementById('dayRows').innerHTML=s.rows.slice().reverse().map(function(row){
