@@ -612,6 +612,21 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div class="stat-card"><div class="stat-num b" id="sTotal">0</div><div class="stat-lbl">Total Staff</div></div>
     </div>
     <div class="card">
+      <div class="sec-title">📈 Last 14 Days — Attendance Trend</div>
+      <div id="chartTrend"></div>
+    </div>
+    <div class="card">
+      <div class="sec-title">🎯 Today at a Glance</div>
+      <div id="chartToday"></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="sec-title" style="margin-bottom:0">🏆 This Month — Staff Attendance</div>
+        <div style="font-size:10px;color:var(--text3)">by present days</div>
+      </div>
+      <div id="chartStaffRank"></div>
+    </div>
+    <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div class="sec-title" style="margin-bottom:0">📋 Today's Log</div>
         <div style="font-size:10px;color:var(--text3)" id="lastSyncTime"></div>
@@ -650,6 +665,10 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="rtbtn active" id="viewStaffBtn" onclick="setReportView('staff')">👤 Staff-wise</button>
       <button class="rtbtn" id="viewDayBtn" onclick="setReportView('day')">📅 Day-wise</button>
       <button class="rtbtn" id="viewMatrixBtn" onclick="setReportView('matrix')">📊 Matrix</button>
+    </div>
+    <div class="card" id="reportChartCard" style="display:none">
+      <div class="sec-title">📊 Period Overview</div>
+      <div id="reportChart"></div>
     </div>
     <div style="text-align:right;margin-bottom:8px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn btn-outline" id="salaryRevealBtn" onclick="toggleSalaryReveal()" style="padding:6px 14px;font-size:12px;width:auto">👁️ Show Salary</button>
@@ -715,6 +734,12 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       </div>
     </div>
     <div id="settingsFullOnly">
+    <div class="card">
+      <div class="sec-title">🧬 Face Data Health Check</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">If two staff have very similar face data, the camera can punch the wrong person. Run this to find such pairs.</div>
+      <button class="btn btn-outline" onclick="faceHealthCheck()" style="width:100%">🔍 Check All Staff Faces</button>
+      <div id="faceHealthOut" style="margin-top:12px"></div>
+    </div>
     <div class="card" id="storageCard">
       <div class="sec-title">💾 Storage</div>
       <div class="set-row">
@@ -726,7 +751,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="btn" onclick="deepCleanStorage()" style="margin-top:6px;width:100%;background:var(--red);color:#fff">🧨 Deep Clean (agar storage 4 MB+ ho)</button>
       <div style="font-size:11px;color:var(--text3);margin-top:8px">Optimize = photos compress. Deep Clean = queue + logs + purani photos sab clear. Data safe rahega (VPS pe backup hai).</div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
-        <div><div class="set-lbl">📱 Staff Portal — Salary Dikhao</div><div class="set-sub">ON = staff apne phone par apni Gross/PF/ESI/Net Pay dekh sakta hai. OFF = sirf attendance dikhega, salary ka koi number nahi (server se bhi nahi bheja jayega).</div></div>
+        <div><div class="set-lbl">📱 Staff Portal — Show Salary</div><div class="set-sub">ON = staff can see their own Gross/PF/ESI/Net Pay on their phone. OFF = only attendance shows, no salary number at all (not even sent by the server).</div></div>
         <label class="switch"><input type="checkbox" id="staffPortalSalaryToggle" onchange="toggleStaffPortalSalary()"><span class="switch-slider"></span></label>
       </div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
@@ -734,7 +759,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <label class="switch"><input type="checkbox" id="reasonCompulsoryToggle" onchange="toggleReasonCompulsory()"><span class="switch-slider"></span></label>
       </div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
-        <div><div class="set-lbl">🎯 Ek Punch = Ek Tap</div><div class="set-sub">ON = har punch ke baad camera ruk jaata hai, agle staff ko khud tap karna hoga. Galti se dusre ka punch OUT hone se bachata hai. OFF = line mein continuous scanning.</div></div>
+        <div><div class="set-lbl">🎯 One Punch = One Tap</div><div class="set-sub">ON = the camera stops after every punch, so the next staff member must tap to start again. Prevents someone else's punch happening by mistake. OFF = continuous scanning for a line of people.</div></div>
         <label class="switch"><input type="checkbox" id="singlePunchToggle" onchange="toggleSinglePunch()"><span class="switch-slider"></span></label>
       </div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
@@ -810,7 +835,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div class="ig"><label class="il">Salary Amount (₹)</label><input type="number" class="if" id="sSalary" placeholder="e.g. 15000" min="0"></div>
         <div class="ig"><label class="il">Basis</label><select class="if" id="sSalaryBasis"><option value="monthly">Per Month</option><option value="yearly">Per Year</option></select></div>
       </div>
-      <div class="ig"><label class="il">📱 Staff Portal PIN (khali chhodo to portal band rahega)</label><input type="text" class="if" id="sPortalPin" placeholder="e.g. 4826" maxlength="8" autocomplete="off"></div>
+      <div class="ig"><label class="il">📱 Staff Portal PIN (leave blank to keep portal off for this staff)</label><input type="text" class="if" id="sPortalPin" placeholder="e.g. 4826" maxlength="8" autocomplete="off"></div>
       <div style="display:none"></div>
       <div class="ig"><label class="il">PF Applicable?</label><select class="if" id="sPF"><option value="1">Yes</option><option value="0">No</option></select></div>
     </div>
@@ -1004,8 +1029,12 @@ function fmtBytes(b){if(b<1024)return b+' B';if(b<1024*1024)return (b/1024).toFi
 // ══════════════════════════════════════════════
 // PUNCH PHOTO — VPS UPLOAD/FETCH
 // ══════════════════════════════════════════════
-function getPunchPhotoUrl(staffId,dateKey,inout){
-  return '/api/punch-photo/'+TOOL_ID+'/'+dateKey+'_'+staffId+'_'+inout+'.jpg';
+function getPunchPhotoUrl(staffId,dateKey,inout,stamp){
+  // The filename is always the same for a given staff+date+in/out, so after a
+  // delete + re-punch the browser would happily serve the OLD cached image.
+  // Appending the punch time makes the URL change whenever the punch changes.
+  const base='/api/punch-photo/'+TOOL_ID+'/'+dateKey+'_'+staffId+'_'+inout+'.jpg';
+  return stamp?base+'?v='+encodeURIComponent(stamp):base;
 }
 async function uploadPunchPhoto(staffId,dateKey,inout,photoData){
   if(!photoData)return false;
@@ -1383,11 +1412,37 @@ const MODEL=GITHUB_PAGES_MODEL;
   }
 }
 
+// ══════════════════════════════════════════════
+// STRICT FACE MATCHING (anti wrong-person punch)
+// ══════════════════════════════════════════════
+const MATCH_THRESHOLD=0.45;  // max distance to accept a match (lower = stricter)
+const MATCH_MARGIN=0.06;     // best and 2nd-best must differ by at least this, else it's a coin-flip
+const MATCH_CONFIRMS=2;      // same person must be seen this many times in a row before punching
+let _confirmId=null,_confirmCount=0;
+function resetMatchConfirm(){_confirmId=null;_confirmCount=0;}
+function euclidDist(a,b){let s=0;for(let i=0;i<a.length;i++){const d=a[i]-b[i];s+=d*d;}return Math.sqrt(s);}
+function matchFaceStrict(desc){
+  const staff=getStaff().filter(s=>s.descriptors&&s.descriptors.length);
+  if(!staff.length)return{ok:false,reason:'no-staff'};
+  const scored=staff.map(s=>{
+    let best=Infinity;
+    s.descriptors.forEach(d=>{const dist=euclidDist(desc,d);if(dist<best)best=dist;});
+    return{id:s.id,name:s.name,dist:best};
+  }).sort((a,b)=>a.dist-b.dist);
+  const best=scored[0],second=scored[1];
+  if(best.dist>MATCH_THRESHOLD)return{ok:false,reason:'unknown',dist:best.dist};
+  if(second){
+    const gap=second.dist-best.dist;
+    // Two people look almost equally close — refuse rather than guess wrong
+    if(gap<MATCH_MARGIN)return{ok:false,reason:'ambiguous',dist:best.dist,gap,a:best.name,b:second.name};
+  }
+  return{ok:true,id:best.id,name:best.name,dist:best.dist,gap:second?second.dist-best.dist:99};
+}
 async function buildMatcher(){
   const staff=getStaff().filter(s=>s.descriptors&&s.descriptors.length);
   if(!staff.length){faceMatcher=null;return;}
   const labeled=staff.map(s=>new faceapi.LabeledFaceDescriptors(s.id,s.descriptors.map(d=>new Float32Array(d))));
-  faceMatcher=new faceapi.FaceMatcher(labeled,0.5);
+  faceMatcher=new faceapi.FaceMatcher(labeled,0.45);
 }
 
 // ══════════════════════════════════════════════
@@ -1678,12 +1733,19 @@ async function startScanLoop(){
             if(myGen!==scanLoopGen)return;
             if(det){
               if(faceMatcher){
-                const match=faceMatcher.findBestMatch(det.descriptor);
-                if(match.label!=='unknown'){
-                  const staff=getStaff().find(s=>s.id===match.label);
+                const m=matchFaceStrict(det.descriptor);
+                if(m.ok){
+                  // Same person must be confirmed twice in a row — one bad frame can't punch
+                  if(_confirmId===m.id){_confirmCount++;}else{_confirmId=m.id;_confirmCount=1;}
+                  if(_confirmCount<MATCH_CONFIRMS){
+                    guide.className='face-guide detected';
+                    label.textContent='Verifying... hold still';
+                  }else{
+                  resetMatchConfirm();
+                  const staff=getStaff().find(s=>s.id===m.id);
                   if(staff){guide.className='face-guide matched';cooldown=true;const punchPhoto=capturePunchThumbnail();await handlePunch(staff,punchPhoto);
                   if(getSettings().singlePunchMode!==false){
-                    // Ek punch = ek tap. Camera band, agle staff ko khud tap karna hoga.
+                    // One punch = one tap. Camera stops; next staff must tap to start.
                     stopMainCam();
                     const ov=document.getElementById('scanOverlay');if(ov)ov.classList.remove('hidden');
                     guide.className='face-guide';cooldown=false;
@@ -1692,9 +1754,16 @@ async function startScanLoop(){
                   }
                   scheduleCamIdleStop();
                   setTimeout(()=>{cooldown=false;guide.className='face-guide';
-                  label.textContent='Agla staff scan kare...';resetStatusCard();
+                  label.textContent='Next staff can scan now...';resetStatusCard();
                   },2500);}
+                  }
+                }else if(m.reason==='ambiguous'){
+                  // Two staff look almost equally close — never guess, ask for a better look
+                  resetMatchConfirm();
+                  guide.className='face-guide detected';
+                  label.textContent='Not clear — please come closer and look straight at the camera';
                 }else{
+                  resetMatchConfirm();
                   guide.className='face-guide failed';label.textContent='Not recognized — capturing...';
                   await captureFail();cooldown=true;setTimeout(()=>{cooldown=false;guide.className='face-guide';label.textContent='Position your face in the frame';resetStatusCard();},4000);
                 }
@@ -1985,9 +2054,9 @@ async function captureFail(){
 function sharePortalLink(staffId){
   const s=getStaff().find(x=>x.id===staffId);
   if(!s){showToast('Staff not found');return;}
-  if(!s.portalPin){showToast('Pehle is staff ka Portal PIN set karo');return;}
+  if(!s.portalPin){showToast('Please set this staff\'s Portal PIN first');return;}
   const link=location.origin+'/me.html?id='+encodeURIComponent(s.id);
-  const msg='Namaste '+s.name+' 🙏\n\nAap apni attendance aur salary ka poora hisaab khud dekh sakte ho:\n\n'+link+'\n\nPIN: '+s.portalPin+'\n\n(Ye sirf dekhne ke liye hai — punch office wale device se hi hoga. PIN kisi ko mat batana.)';
+  const msg='Hello '+s.name+',\n\nYou can view your attendance details here:\n'+link+'\n\nPIN: '+s.portalPin+'\n\n(This is for viewing only — punching is done on the office device. Please do not share your PIN with anyone.)\n\n— — —\n\nNamaste '+s.name+',\n\nAap apni attendance ki jaankari yahan dekh sakte hain:\n'+link+'\n\nPIN: '+s.portalPin+'\n\n(Ye sirf dekhne ke liye hai — punch office wale device se hi hoga. PIN kisi ko mat batana.)';
   window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
 }
 function renderStaffList(){
@@ -2154,7 +2223,7 @@ function refreshStorageDisplay(){
 }
 function toggleStaffPortalSalary(){
   const s=getSettings();s.staffPortalSalary=document.getElementById('staffPortalSalaryToggle').checked;setSettings(s);
-  showToast(s.staffPortalSalary?'💰 Staff ab apne portal par salary dekh sakenge':'🔒 Staff portal par salary ab nahi dikhegi — sirf attendance',5000);
+  showToast(s.staffPortalSalary?'💰 Staff can now see salary on their own portal':'🔒 Salary hidden on staff portal — only attendance will show',5000);
 }
 function toggleReasonCompulsory(){
   const s=getSettings();s.reasonCompulsory=document.getElementById('reasonCompulsoryToggle').checked;setSettings(s);
@@ -2162,7 +2231,7 @@ function toggleReasonCompulsory(){
 }
 function toggleSinglePunch(){
   const s=getSettings();s.singlePunchMode=document.getElementById('singlePunchToggle').checked;setSettings(s);
-  showToast(s.singlePunchMode?'🎯 Ek punch ke baad camera rukega — agle staff ko tap karna hoga':'▶️ Continuous scanning — ek ke baad ek punch bina tap ke');
+  showToast(s.singlePunchMode?'🎯 Camera stops after each punch — next staff must tap to continue':'▶️ Continuous scanning — punches happen one after another without tapping');
 }
 function togglePhotoSave(){
   const s=getSettings();s.localPhotoSave=document.getElementById('photoSaveToggle').checked;setSettings(s);
@@ -2427,7 +2496,94 @@ function toggleSalaryReveal(){
     showToast('❌ Incorrect PIN');
   }
 }
+function faceHealthCheck(){
+  const staff=getStaff().filter(s=>s.descriptors&&s.descriptors.length);
+  const out=document.getElementById('faceHealthOut');
+  if(!out)return;
+  if(staff.length<2){out.innerHTML='<div style="font-size:12px;color:var(--text3)">Need at least 2 registered staff to compare.</div>';return;}
+  const pairs=[];
+  for(let i=0;i<staff.length;i++){
+    for(let j=i+1;j<staff.length;j++){
+      let best=Infinity;
+      staff[i].descriptors.forEach(d1=>{
+        staff[j].descriptors.forEach(d2=>{
+          const dist=euclidDist(d1,d2);
+          if(dist<best)best=dist;
+        });
+      });
+      pairs.push({a:staff[i].name,b:staff[j].name,dist:best});
+    }
+  }
+  pairs.sort((x,y)=>x.dist-y.dist);
+  const risky=pairs.filter(p=>p.dist<0.55);
+  let html='<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Checked '+staff.length+' staff · '+pairs.length+' comparisons</div>';
+  if(!risky.length){
+    html+='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">✅ All staff faces are clearly different. Closest pair is '+pairs[0].dist.toFixed(2)+' apart (safe).</div>';
+  }else{
+    html+='<div style="background:var(--red-bg);color:var(--red);padding:10px;border-radius:9px;font-size:12.5px;margin-bottom:9px">⚠️ '+risky.length+' pair(s) are too similar. These can cause wrong-person punches. Please re-register these staff with clear, well-lit photos and make sure no one else is visible in the frame.</div>';
+    html+=risky.map(p=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--blush2)"><span>'+escHtml(p.a)+' ↔ '+escHtml(p.b)+'</span><b style="color:'+(p.dist<0.45?'var(--red)':'var(--orange)')+'">'+p.dist.toFixed(2)+'</b></div>').join('');
+  }
+  html+='<div style="font-size:10.5px;color:var(--text3);margin-top:9px">Higher number = more different = safer. Below 0.45 is risky.</div>';
+  out.innerHTML=html;
+}
+function renderReportChart(){
+  const el=document.getElementById('reportChart'),card=document.getElementById('reportChartCard');
+  if(!el||!card)return;
+  if(!lastReportData||!lastReportData.length){card.style.display='none';return;}
+  card.style.display='';
+  const tot=lastReportData.reduce((a,s)=>({
+    present:a.present+s.present,late:a.late+s.late,half:a.half+s.halfDay,
+    absent:a.absent+s.absent,ot:a.ot+s.overtime,early:a.early+s.earlyOut
+  }),{present:0,late:0,half:0,absent:0,ot:0,early:0});
+  const onTime=Math.max(0,tot.present-tot.late-tot.ot-tot.early);
+  const segs=[
+    {n:'On time',v:onTime,c:'#4A8C5C'},
+    {n:'Late',v:tot.late,c:'#C47A20'},
+    {n:'Overtime',v:tot.ot,c:'#3A6EA8'},
+    {n:'Early Out',v:tot.early,c:'#D4B483'},
+    {n:'Half Day',v:tot.half,c:'#B8955A'},
+    {n:'Absent',v:tot.absent,c:'#C44B35'}
+  ].filter(s=>s.v>0);
+  const total=segs.reduce((a,s)=>a+s.v,0);
+  let donut='';
+  if(total>0){
+    const R=52,SW=17,C=2*Math.PI*R;let off=0;
+    donut='<svg viewBox="0 0 128 128" style="width:124px;height:124px;flex-shrink:0"><g transform="rotate(-90 64 64)">';
+    segs.forEach(s=>{
+      const len=C*s.v/total;
+      donut+='<circle cx="64" cy="64" r="'+R+'" fill="none" stroke="'+s.c+'" stroke-width="'+SW+'" stroke-dasharray="'+len+' '+(C-len)+'" stroke-dashoffset="'+(-off)+'"><title>'+s.n+': '+s.v+'</title></circle>';
+      off+=len;
+    });
+    const attendedPct=Math.round((total-tot.absent)/total*100);
+    donut+='</g><text x="64" y="61" font-size="20" font-weight="800" fill="#2C1A0A" text-anchor="middle">'+attendedPct+'%</text>';
+    donut+='<text x="64" y="76" font-size="7.5" fill="#B89878" text-anchor="middle">ATTENDED</text></svg>';
+  }
+  const legend=segs.map(s=>'<div style="display:flex;align-items:center;gap:7px;font-size:12px;padding:2.5px 0"><span style="width:11px;height:11px;border-radius:3px;background:'+s.c+';flex-shrink:0"></span><span style="color:var(--text2);flex:1">'+s.n+'</span><b>'+s.v+'</b></div>').join('');
+  // Per-staff comparison bars
+  const bars=lastReportData.slice().sort((a,b)=>b.pct-a.pct).map(s=>{
+    const c=s.pct>=85?'#4A8C5C':s.pct>=60?'#C47A20':'#C44B35';
+    const den=Math.max(1,s.workDays);
+    const wP=(s.present/den)*100,wL=(s.late/den)*100,wA=(s.absent/den)*100;
+    return '<div style="margin-bottom:9px">'+
+      '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
+        '<span style="font-weight:600">'+escHtml(s.staff.name)+'</span>'+
+        '<span style="color:var(--text2)">'+s.present+'P'+(s.late?' · '+s.late+'L':'')+(s.absent?' · '+s.absent+'A':'')+' &nbsp;<b style="color:'+c+'">'+s.pct+'%</b></span>'+
+      '</div>'+
+      '<div style="height:8px;background:var(--blush2);border-radius:20px;overflow:hidden;display:flex">'+
+        '<div style="width:'+Math.max(0,wP-wL)+'%;background:#4A8C5C"></div>'+
+        '<div style="width:'+wL+'%;background:#C47A20"></div>'+
+        '<div style="width:'+wA+'%;background:#C44B35"></div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  el.innerHTML=
+    (total>0?'<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:center;margin-bottom:16px"><div>'+donut+'</div><div style="flex:1;min-width:140px">'+legend+'</div></div>':'')+
+    '<div style="border-top:1px solid var(--blush2);padding-top:12px">'+
+      '<div style="font-size:11px;color:var(--text3);margin-bottom:9px;text-transform:uppercase;letter-spacing:0.5px">Staff Comparison</div>'+bars+
+    '</div>';
+}
 function renderReportTable(){
+  try{renderReportChart();}catch(e){console.warn('report chart',e);}
   if(reportViewMode==='day')renderDayWiseTable(lastDayWiseData);
   else if(reportViewMode==='matrix')renderMatrixTable(lastReportData);
   else renderStaffWiseTable(lastReportData);
@@ -2576,8 +2732,8 @@ function viewPunchPhoto(idx){
   document.getElementById('photoLightboxImg').src=src;
   openPopup('photoLightbox');
 }
-function showVpsPhoto(staffId,dateKey,inout){
-  const url=getPunchPhotoUrl(staffId,dateKey,inout);
+function showVpsPhoto(staffId,dateKey,inout,stamp){
+  const url=getPunchPhotoUrl(staffId,dateKey,inout,stamp);
   const img=document.getElementById('photoLightboxImg');
   img.src='';img.alt='Loading photo from server...';
   openPopup('photoLightbox');
@@ -2593,10 +2749,10 @@ function renderMiniTable(rows,firstColLabel){
     // Priority: local base64 (legacy) OR VPS flag (new)
     let inCell=r.inTime;
     if(r.inPhoto){const inIdx=stashPhoto(r.inPhoto);inCell+=` <span class="photo-ic" onclick="viewPunchPhoto(${inIdx})">📷</span>`;}
-    else if(r.hasInPhoto&&r.staffId&&r.dateKey)inCell+=` <span class="photo-ic" onclick="showVpsPhoto('${r.staffId}','${r.dateKey}','in')">📷</span>`;
+    else if(r.hasInPhoto&&r.staffId&&r.dateKey)inCell+=` <span class="photo-ic" onclick="showVpsPhoto('${r.staffId}','${r.dateKey}','in','${r.inTime||''}')">📷</span>`;
     let outCell=r.outTime;
     if(r.outPhoto){const outIdx=stashPhoto(r.outPhoto);outCell+=` <span class="photo-ic" onclick="viewPunchPhoto(${outIdx})">📷</span>`;}
-    else if(r.hasOutPhoto&&r.staffId&&r.dateKey)outCell+=` <span class="photo-ic" onclick="showVpsPhoto('${r.staffId}','${r.dateKey}','out')">📷</span>`;
+    else if(r.hasOutPhoto&&r.staffId&&r.dateKey)outCell+=` <span class="photo-ic" onclick="showVpsPhoto('${r.staffId}','${r.dateKey}','out','${r.outTime||''}')">📷</span>`;
     return `<tr><td${r.mono?' class="mono"':''}>${escHtml(r.label)}</td><td style="font-weight:600;color:${statusColor(r.status)}">${r.status}</td><td class="mono">${inCell}</td><td class="mono">${outCell}</td><td>${r.hours}</td><td class="reason-cell">${escHtml(r.reason)}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
@@ -2830,9 +2986,9 @@ function renderTodayLog(){
       const skipped=reasonText==='(skipped)';
       let inPhotoIc='',outPhotoIc='';
       if(a.inPhoto){_todayPhotoCache.push(a.inPhoto);const idx=_todayPhotoCache.length-1;inPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();viewTodayPhoto(${idx})">📷</span>`;}
-      else if(a.hasInPhoto)inPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();showVpsPhoto('${a.staffId}','${a.date}','in')">📷</span>`;
+      else if(a.hasInPhoto)inPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();showVpsPhoto('${a.staffId}','${a.date}','in','${a.inTime||''}')">📷</span>`;
       if(a.outPhoto){_todayPhotoCache.push(a.outPhoto);const idx=_todayPhotoCache.length-1;outPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();viewTodayPhoto(${idx})">📷</span>`;}
-      else if(a.hasOutPhoto)outPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();showVpsPhoto('${a.staffId}','${a.date}','out')">📷</span>`;
+      else if(a.hasOutPhoto)outPhotoIc=` <span class="photo-ic" onclick="event.stopPropagation();showVpsPhoto('${a.staffId}','${a.date}','out','${a.outTime||''}')">📷</span>`;
       const warnIcon=missingReason?' <span style="color:var(--red)" title="Reason missing">⚠️</span>':'';
       return `<details class="log-item-collapse"><summary><div class="log-item"><div class="log-dot ${type}"></div>${thumbHtml}<div class="log-name">${escHtml(a.staffName)}${warnIcon}</div><div class="log-time">${a.outTime||a.inTime||'--'}</div><span class="log-badge ${lc}">${lbl}</span></div></summary>
         <div class="log-item-detail">
@@ -2845,7 +3001,110 @@ function renderTodayLog(){
     }).join('');
   });
 }
-function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staff=getStaff(),present=att.filter(a=>a.status!=='Absent').length,late=att.filter(a=>a.status==='Late').length;document.getElementById('sPresent').textContent=present;document.getElementById('sAbsent').textContent=Math.max(0,staff.length-present);document.getElementById('sLate').textContent=late;document.getElementById('sTotal').textContent=staff.length;}
+// ══════════════════════════════════════════════
+// DASHBOARD CHARTS (hand-drawn SVG — no library, works offline)
+// ══════════════════════════════════════════════
+function chartEmpty(msg){return '<div style="text-align:center;padding:26px 10px;color:var(--text3);font-size:12px">'+msg+'</div>';}
+
+function renderTrendChart(){
+  const el=document.getElementById('chartTrend');if(!el)return;
+  const staff=getStaff();if(!staff.length){el.innerHTML=chartEmpty('No staff added yet');return;}
+  const att=getAtt();
+  const days=[];
+  for(let i=13;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const key=toKey(d);
+    const isOff=isWeekOff(d)||isHoliday(key);
+    const present=att.filter(a=>a.date===key&&a.inTime).length;
+    days.push({key,d,present,isOff,pct:staff.length?Math.round(present/staff.length*100):0});
+  }
+  const W=320,H=140,PL=26,PR=8,PT=12,PB=26;
+  const iw=W-PL-PR,ih=H-PT-PB;
+  const x=i=>PL+(iw*i/(days.length-1));
+  const y=v=>PT+ih-(ih*v/100);
+  const pts=days.map((p,i)=>x(i)+','+y(p.pct));
+  const area='M'+x(0)+','+(PT+ih)+' L'+pts.join(' L')+' L'+x(days.length-1)+','+(PT+ih)+' Z';
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">';
+  [0,50,100].forEach(g=>{
+    svg+='<line x1="'+PL+'" y1="'+y(g)+'" x2="'+(W-PR)+'" y2="'+y(g)+'" stroke="#F2E4DA" stroke-width="1"/>';
+    svg+='<text x="'+(PL-5)+'" y="'+(y(g)+3)+'" font-size="7" fill="#B89878" text-anchor="end">'+g+'%</text>';
+  });
+  svg+='<defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#B8955A" stop-opacity="0.32"/><stop offset="100%" stop-color="#B8955A" stop-opacity="0.02"/></linearGradient></defs>';
+  svg+='<path d="'+area+'" fill="url(#tg)"/>';
+  svg+='<polyline points="'+pts.join(' ')+'" fill="none" stroke="#B8955A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  days.forEach((p,i)=>{
+    const c=p.isOff?'#B89878':(p.pct>=75?'#4A8C5C':p.pct>=40?'#C47A20':'#C44B35');
+    svg+='<circle cx="'+x(i)+'" cy="'+y(p.pct)+'" r="'+(i===days.length-1?3.6:2.4)+'" fill="'+c+'"><title>'+p.key+': '+p.present+'/'+staff.length+' ('+p.pct+'%)'+(p.isOff?' — week off':'')+'</title></circle>';
+    if(i%3===0||i===days.length-1){
+      svg+='<text x="'+x(i)+'" y="'+(H-9)+'" font-size="7" fill="#B89878" text-anchor="middle">'+p.d.getDate()+'/'+(p.d.getMonth()+1)+'</text>';
+    }
+  });
+  svg+='</svg>';
+  const avg=Math.round(days.filter(d=>!d.isOff).reduce((s,d)=>s+d.pct,0)/Math.max(1,days.filter(d=>!d.isOff).length));
+  const last=days[days.length-1],prev=days[days.length-2];
+  const arrow=last.pct>prev.pct?'<span style="color:var(--green)">▲</span>':last.pct<prev.pct?'<span style="color:var(--red)">▼</span>':'—';
+  el.innerHTML=svg+'<div style="display:flex;justify-content:space-around;margin-top:8px;font-size:11px;color:var(--text2)"><div>14-day avg: <b style="color:var(--text)">'+avg+'%</b></div><div>Today: <b style="color:var(--text)">'+last.pct+'%</b> '+arrow+'</div></div>';
+}
+
+function renderTodayDonut(){
+  const el=document.getElementById('chartToday');if(!el)return;
+  const staff=getStaff();if(!staff.length){el.innerHTML=chartEmpty('No staff added yet');return;}
+  const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today);
+  const late=att.filter(a=>a.status==='Late').length;
+  const half=att.filter(a=>a.status==='Half Day').length;
+  const onTime=att.filter(a=>a.inTime&&a.status!=='Late'&&a.status!=='Half Day'&&a.status!=='Absent').length;
+  const absent=Math.max(0,staff.length-onTime-late-half);
+  const segs=[{n:'On time',v:onTime,c:'#4A8C5C'},{n:'Late',v:late,c:'#C47A20'},{n:'Half Day',v:half,c:'#D4B483'},{n:'Absent',v:absent,c:'#C44B35'}].filter(s=>s.v>0);
+  const total=staff.length;
+  if(!segs.length){el.innerHTML=chartEmpty('No punches yet today');return;}
+  const R=52,SW=17,C=2*Math.PI*R,cx=64,cy=64;
+  let off=0;
+  let svg='<svg viewBox="0 0 128 128" style="width:128px;height:128px;flex-shrink:0"><g transform="rotate(-90 64 64)">';
+  segs.forEach(s=>{
+    const len=C*s.v/total;
+    svg+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="'+s.c+'" stroke-width="'+SW+'" stroke-dasharray="'+len+' '+(C-len)+'" stroke-dashoffset="'+(-off)+'"><title>'+s.n+': '+s.v+'</title></circle>';
+    off+=len;
+  });
+  svg+='</g>';
+  const pctIn=Math.round((onTime+late+half)/total*100);
+  svg+='<text x="64" y="61" font-size="21" font-weight="800" fill="#2C1A0A" text-anchor="middle">'+pctIn+'%</text>';
+  svg+='<text x="64" y="76" font-size="8" fill="#B89878" text-anchor="middle">PRESENT</text></svg>';
+  const legend=segs.map(s=>'<div style="display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0"><span style="width:11px;height:11px;border-radius:3px;background:'+s.c+';flex-shrink:0"></span><span style="color:var(--text2);flex:1">'+s.n+'</span><b>'+s.v+'</b></div>').join('');
+  el.innerHTML='<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:center"><div>'+svg+'</div><div style="flex:1;min-width:130px">'+legend+'</div></div>';
+}
+
+function renderStaffRankChart(){
+  const el=document.getElementById('chartStaffRank');if(!el)return;
+  const staff=getStaff();if(!staff.length){el.innerHTML=chartEmpty('No staff added yet');return;}
+  const now=new Date();
+  const from=toKey(new Date(now.getFullYear(),now.getMonth(),1)),to=toKey(now);
+  const att=getAtt();
+  const dates=getDatesInRange(from,to).filter(d=>!isWeekOff(new Date(d+'T00:00:00'))&&!isHoliday(d));
+  if(!dates.length){el.innerHTML=chartEmpty('No working days yet this month');return;}
+  const rows=staff.map(s=>{
+    const present=dates.filter(d=>{const r=att.find(a=>a.staffId===s.id&&a.date===d);return r&&r.inTime;}).length;
+    const late=dates.filter(d=>{const r=att.find(a=>a.staffId===s.id&&a.date===d);return r&&r.status==='Late';}).length;
+    return{name:s.name,present,late,pct:Math.round(present/dates.length*100)};
+  }).sort((a,b)=>b.pct-a.pct);
+  el.innerHTML=rows.map((r,i)=>{
+    const c=r.pct>=85?'#4A8C5C':r.pct>=60?'#C47A20':'#C44B35';
+    const medal=i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':'';
+    return '<div style="margin-bottom:9px">'+
+      '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
+        '<span style="font-weight:600">'+medal+escHtml(r.name)+'</span>'+
+        '<span style="color:var(--text2)">'+r.present+'/'+dates.length+' d'+(r.late?' · <span style="color:var(--orange)">'+r.late+' late</span>':'')+' &nbsp;<b style="color:'+c+'">'+r.pct+'%</b></span>'+
+      '</div>'+
+      '<div style="height:7px;background:var(--blush2);border-radius:20px;overflow:hidden"><div style="height:100%;width:'+r.pct+'%;background:'+c+';border-radius:20px"></div></div>'+
+    '</div>';
+  }).join('');
+}
+
+function renderDashCharts(){
+  try{renderTrendChart();}catch(e){console.warn('trend chart',e);}
+  try{renderTodayDonut();}catch(e){console.warn('donut chart',e);}
+  try{renderStaffRankChart();}catch(e){console.warn('rank chart',e);}
+}
+function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staff=getStaff(),present=att.filter(a=>a.status!=='Absent').length,late=att.filter(a=>a.status==='Late').length;document.getElementById('sPresent').textContent=present;document.getElementById('sAbsent').textContent=Math.max(0,staff.length-present);document.getElementById('sLate').textContent=late;document.getElementById('sTotal').textContent=staff.length;renderDashCharts();}
 
 // ══════════════════════════════════════════════
 // NAVIGATION
@@ -3123,7 +3382,7 @@ function saveManEntry(){
 function delManEntry(){
   const sid=document.getElementById('manStaff').value,date=document.getElementById('manDate').value;
   if(!sid||!date){showToast('Staff aur Date chunne');return;}
-  if(!confirm('Ye record delete karna chahte ho?'))return;
+  if(!confirm('Delete this record?'))return;
   setAtt(getAtt().filter(a=>!(a.staffId===sid&&a.date===date)));
   renderTodayLog();updateDashStats();showToast('🗑️ Record delete ho gaya');loadManRec();
 }
