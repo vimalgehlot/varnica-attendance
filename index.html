@@ -671,6 +671,8 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div id="reportChart"></div>
     </div>
     <div style="text-align:right;margin-bottom:8px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-outline" onclick="shareReportExcel()" style="padding:6px 12px;font-size:12px;width:auto">📗 Send Excel</button>
+      <button class="btn btn-outline" onclick="shareReportHTML()" style="padding:6px 12px;font-size:12px;width:auto">📄 Send Report</button>
       <button class="btn btn-outline" id="salaryRevealBtn" onclick="toggleSalaryReveal()" style="padding:6px 14px;font-size:12px;width:auto">👁️ Show Salary</button>
       <button class="btn btn-outline" id="expandAllBtn" onclick="toggleAllReportRows()" style="padding:6px 14px;font-size:12px;width:auto">🔽 Sab Expand Karo</button>
     </div>
@@ -770,7 +772,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="card">
       <div class="sec-title">⏰ Timing Rules</div>
       <div class="set-row"><div><div class="set-lbl">Late Grace Period</div><div class="set-sub">Minutes after shift start = Present</div></div><div class="set-val" onclick="editSetting('grace')" id="graceVal">10 min</div></div>
-      <div class="set-row"><div><div class="set-lbl">Half Day Threshold</div><div class="set-sub">Min hours = Half Day</div></div><div class="set-val" onclick="editSetting('halfDay')" id="halfDayVal">4 hrs</div></div>
+      <div class="set-row"><div><div class="set-lbl">Half Day Threshold</div><div class="set-sub">Auto: half of each staff's own shift hours. This value is only a fallback when shift timing is missing.</div></div><div class="set-val" onclick="editSetting('halfDay')" id="halfDayVal">4 hrs</div></div>
       <div class="set-row"><div><div class="set-lbl">Early Out Threshold</div><div class="set-sub">Min before shift end = Early Out</div></div><div class="set-val" onclick="editSetting('earlyOut')" id="earlyOutVal">15 min</div></div>
     </div>
     <div class="card">
@@ -1798,14 +1800,19 @@ function capturePunchThumbnail(){
   }catch(e){return null;}
 }
 async function handlePunch(staff,photo){
-  const yesterday=toKey(new Date(Date.now()-86400000));
-  const yAtt=getAtt().find(a=>a.staffId===staff.id&&a.date===yesterday);
-  if(!yAtt&&!isWeekOff(new Date(Date.now()-86400000))&&!isHoliday(yesterday)){
+  // Look back over the last 7 days for ANY day where a reason is still missing —
+  // absent, late, early out or half day. The oldest one is asked for first, so a
+  // staff member cannot keep punching while leaving earlier days unexplained.
+  const pending=findPendingReasonDay(staff);
+  if(pending){
     pendingAbsentId=staff.id;
+    pendingReasonDate=pending.date;
     document.getElementById('absentStaffName').textContent=staff.name;
     const absPhotoEl=document.getElementById('absentStaffPhoto');
     if(staff.photo){absPhotoEl.src=staff.photo;absPhotoEl.style.display='inline-block';}else{absPhotoEl.style.display='none';}
-    document.getElementById('absentMsg').textContent='You were absent on '+yesterday+'. Please provide a reason.';
+    document.getElementById('absentMsg').textContent=pending.status==='Absent'
+      ? 'You were absent on '+fmtDateLabel(pending.date)+'. Please provide a reason.'
+      : 'Your '+pending.status+' on '+fmtDateLabel(pending.date)+' has no reason yet. Please provide a reason.';
     document.getElementById('absentReason').value='';document.getElementById('absentReqMsg').style.display='none';
     pendingPunchData={staff,photo};openPopup('absentPopup');
     const absSkipBtn=document.getElementById('absentSkipBtn');
@@ -1871,7 +1878,7 @@ function confirmOutPunch(){
   const earlyMin=timeDiffMin(timeStr,shiftEnd);
   const vpsPhotoEnabled=settings.localPhotoSave!==false;
   rec.outTime=timeStr;rec.hours=hrs;
-  if(hrs<settings.halfDay)rec.status='Half Day';
+  if(hrs<getHalfDayThreshold(staff))rec.status='Half Day';
   else if(earlyMin>settings.earlyOut)warningType='early';
   else if(timeDiffMin(shiftEnd,timeStr)>30)rec.status='Overtime';
   if(!setAtt(att))return;
@@ -1974,7 +1981,7 @@ function skipWarningReason(){
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(rec){
     if(warningType==='late')rec.status='Late';
-    else rec.status=rec.hours<getSettings().halfDay?'Half Day':'Early Out';
+    else rec.status=rec.hours<getHalfDayThreshold(staff)?'Half Day':'Early Out';
     rec.reason='(skipped)';
     if(setAtt(att))syncRecord(rec);
   }
@@ -1990,7 +1997,7 @@ function submitWarning(){
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(rec){
     if(warningType==='late'){rec.status='Late';rec.reason=reason;}
-    else{rec.earlyOutReason=reason;rec.status=rec.hours<getSettings().halfDay?'Half Day':'Early Out';rec.reason=reason;}
+    else{rec.earlyOutReason=reason;rec.status=rec.hours<getHalfDayThreshold(staff)?'Half Day':'Early Out';rec.reason=reason;}
     if(!setAtt(att)){
       const m=document.getElementById('wpReqMsg');m.style.display='block';m.textContent='❌ Save fail hua (storage full). Maine auto-cleanup kar diya — "Submit" phir se dabao.';
       return;
@@ -2002,31 +2009,37 @@ function submitWarning(){
 }
 
 function skipAbsentReason(){
-  const yesterday=toKey(new Date(Date.now()-86400000));
+  const targetDate=pendingReasonDate||toKey(new Date(Date.now()-86400000));
   const att=getAtt();
   const staff=getStaff().find(s=>s.id===pendingAbsentId);
-  const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===yesterday);
+  const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===targetDate);
   if(existing){existing.absentReason='(skipped)';setAtt(att);}
-  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:'(skipped)'});setAtt(att);}
+  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:targetDate,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:'(skipped)'});setAtt(att);}
   closePopup('absentPopup');
   syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,status:'Absent',absentReason:'(skipped)',hours:0});
   if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff,pendingPunchData.photo);
-  pendingAbsentId=null;pendingPunchData=null;
+  pendingAbsentId=null;pendingPunchData=null;pendingReasonDate=null;
 }
 function submitAbsentReason(){
   const reason=document.getElementById('absentReason').value.trim();
   if(!reason){document.getElementById('absentReqMsg').style.display='block';document.getElementById('absentReqMsg').textContent='⚠️ Please enter a reason.';return;}
-  const yesterday=toKey(new Date(Date.now()-86400000));
+  const targetDate=pendingReasonDate||toKey(new Date(Date.now()-86400000));
   const att=getAtt();
   const staff=getStaff().find(s=>s.id===pendingAbsentId);
-  const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===yesterday);
-  const failMsg=()=>{const m=document.getElementById('absentReqMsg');m.style.display='block';m.textContent='❌ Save fail hua (storage full). Maine auto-cleanup kar diya — "Submit" phir se dabao.';};
-  if(existing){existing.absentReason=reason;if(!setAtt(att)){failMsg();return;}}
-  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});if(!setAtt(att)){failMsg();return;}}
+  const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===targetDate);
+  const failMsg=()=>{const m=document.getElementById('absentReqMsg');m.style.display='block';m.textContent='❌ Save failed (storage full). Auto-cleanup done — please press "Submit" again.';};
+  if(existing){
+    // Could be an Absent day OR a Late / Early Out / Half Day that never got a reason
+    if(existing.status==='Absent'||!existing.inTime)existing.absentReason=reason;
+    else existing.reason=reason;
+    if(!setAtt(att)){failMsg();return;}
+  }
+  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:targetDate,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});if(!setAtt(att)){failMsg();return;}}
   closePopup('absentPopup');
-  syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,status:'Absent',absentReason:reason,hours:0});
+  const savedRec=getAtt().find(a=>a.staffId===pendingAbsentId&&a.date===targetDate);
+  if(savedRec)syncRecord(savedRec);
   if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff,pendingPunchData.photo);
-  pendingAbsentId=null;pendingPunchData=null;
+  pendingAbsentId=null;pendingPunchData=null;pendingReasonDate=null;
 }
 
 async function captureFail(){
@@ -2559,21 +2572,27 @@ function renderReportChart(){
     donut+='<text x="64" y="76" font-size="7.5" fill="#B89878" text-anchor="middle">ATTENDED</text></svg>';
   }
   const legend=segs.map(s=>'<div style="display:flex;align-items:center;gap:7px;font-size:12px;padding:2.5px 0"><span style="width:11px;height:11px;border-radius:3px;background:'+s.c+';flex-shrink:0"></span><span style="color:var(--text2);flex:1">'+s.n+'</span><b>'+s.v+'</b></div>').join('');
-  // Per-staff comparison bars
+  // Per-staff comparison bars — same colour language as the donut above
   const bars=lastReportData.slice().sort((a,b)=>b.pct-a.pct).map(s=>{
     const c=s.pct>=85?'#4A8C5C':s.pct>=60?'#C47A20':'#C44B35';
     const den=Math.max(1,s.workDays);
-    const wP=(s.present/den)*100,wL=(s.late/den)*100,wA=(s.absent/den)*100;
-    return '<div style="margin-bottom:9px">'+
+    const onT=Math.max(0,s.present-s.late-s.overtime-s.earlyOut);
+    const seg=[
+      {v:onT,c:'#4A8C5C',n:'On time'},
+      {v:s.late,c:'#C47A20',n:'Late'},
+      {v:s.overtime,c:'#3A6EA8',n:'Overtime'},
+      {v:s.earlyOut,c:'#D4B483',n:'Early Out'},
+      {v:s.halfDay,c:'#B8955A',n:'Half Day'},
+      {v:s.absent,c:'#C44B35',n:'Absent'}
+    ].filter(x=>x.v>0);
+    const fills=seg.map(x=>'<div style="width:'+(x.v/den*100)+'%;background:'+x.c+'" title="'+x.n+': '+x.v+'"></div>').join('');
+    const detail=[s.present?s.present+'P':'',s.late?s.late+'L':'',s.overtime?s.overtime+'OT':'',s.earlyOut?s.earlyOut+'E':'',s.halfDay?s.halfDay+'H':'',s.absent?s.absent+'A':''].filter(Boolean).join(' · ');
+    return '<div onclick="openStaffFromChart(\''+s.staff.id+'\')" style="margin-bottom:9px;cursor:pointer">'+
       '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
         '<span style="font-weight:600">'+escHtml(s.staff.name)+'</span>'+
-        '<span style="color:var(--text2)">'+s.present+'P'+(s.late?' · '+s.late+'L':'')+(s.absent?' · '+s.absent+'A':'')+' &nbsp;<b style="color:'+c+'">'+s.pct+'%</b></span>'+
+        '<span style="color:var(--text2)">'+detail+' &nbsp;<b style="color:'+c+'">'+s.pct+'%</b></span>'+
       '</div>'+
-      '<div style="height:8px;background:var(--blush2);border-radius:20px;overflow:hidden;display:flex">'+
-        '<div style="width:'+Math.max(0,wP-wL)+'%;background:#4A8C5C"></div>'+
-        '<div style="width:'+wL+'%;background:#C47A20"></div>'+
-        '<div style="width:'+wA+'%;background:#C44B35"></div>'+
-      '</div>'+
+      '<div style="height:8px;background:var(--blush2);border-radius:20px;overflow:hidden;display:flex">'+fills+'</div>'+
     '</div>';
   }).join('');
   el.innerHTML=
@@ -3004,6 +3023,137 @@ function renderTodayLog(){
 // ══════════════════════════════════════════════
 // DASHBOARD CHARTS (hand-drawn SVG — no library, works offline)
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+// CLICK-THROUGH — tap any chart/bar to open the matching detail
+// ══════════════════════════════════════════════
+function _expandAndScroll(selector,matchText){
+  setTimeout(()=>{
+    const rows=document.querySelectorAll(selector);
+    for(const r of rows){
+      if(r.textContent.indexOf(matchText)>=0){
+        r.open=true;
+        r.scrollIntoView({behavior:'smooth',block:'center'});
+        r.style.transition='box-shadow .3s';
+        r.style.boxShadow='0 0 0 2px var(--brand)';
+        setTimeout(()=>{r.style.boxShadow='';},1600);
+        return;
+      }
+    }
+  },160);
+}
+function openStaffFromChart(staffId){
+  const s=(lastReportData||[]).find(x=>x.staff.id===staffId);
+  if(!s)return;
+  if(typeof setReportView==='function')setReportView('staff');
+  _expandAndScroll('#reportTable details',s.staff.name);
+}
+function openDayFromChart(dateKey){
+  if(!lastReportData||!lastReportData.length){
+    showToast('Generate a report first to see day details');return;
+  }
+  if(typeof setReportView==='function')setReportView('day');
+  _expandAndScroll('#reportTable details',fmtDateLabel(dateKey));
+}
+function goToReportForDate(dateKey){
+  // From the Dashboard trend chart: jump to the Report tab for that single day
+  showPage('admin');
+  if(typeof aTab==='function')aTab('report');
+  const f=document.getElementById('rptFrom'),t=document.getElementById('rptTo');
+  if(f&&t){f.value=dateKey;t.value=dateKey;}
+  if(typeof generateReport==='function')generateReport();
+  setTimeout(()=>{if(typeof setReportView==='function')setReportView('day');},220);
+  showToast('📅 Showing report for '+fmtDateLabel(dateKey));
+}
+function goToStaffReport(staffName){
+  showPage('admin');
+  if(typeof aTab==='function')aTab('report');
+  if(typeof generateReport==='function')generateReport();
+  setTimeout(()=>{
+    if(typeof setReportView==='function')setReportView('staff');
+    _expandAndScroll('#reportTable details',staffName);
+  },260);
+}
+// ══════════════════════════════════════════════
+// SHARE REPORT AS FILE (Excel / HTML) VIA WHATSAPP
+// ══════════════════════════════════════════════
+async function shareFile(filename,mime,content,titleText){
+  try{
+    const file=new File([content],filename,{type:mime});
+    if(navigator.canShare&&navigator.canShare({files:[file]})&&navigator.share){
+      await navigator.share({files:[file],title:titleText,text:titleText});
+      return;
+    }
+  }catch(e){
+    if(e&&e.name==='AbortError')return; // person cancelled the share sheet
+  }
+  // Fallback — download, then the person attaches it in WhatsApp themselves
+  const blob=new Blob([content],{type:mime});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=filename;document.body.appendChild(a);a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  showToast('📥 File downloaded. Open WhatsApp and attach it from your Downloads.',6000);
+}
+function buildPayrollCSVText(){
+  const rows=[['Name','Role','Salary Basis','Fixed Salary','Daily Rate','Working Days','Late','Early Out','Overtime','Absent','Unpaid Week-off','Present','Half Day','Week-off/Holiday','Worked on Off-day','TOTAL PAYING DAYS','Gross Earned','PF','ESI','Net Pay']];
+  lastReportData.forEach(s=>{rows.push([
+    s.staff.name,s.staff.role||'',s.staff.salaryBasis==='yearly'?'Per Year':'Per Month',
+    s.staff.salary||0,s.refDailyRate?s.refDailyRate.toFixed(2):0,
+    s.workDays,s.late,s.earlyOut,s.overtime,s.absent,s.unpaidOffDays||0,
+    s.present,s.halfDay,s.paidOffDays||0,s.extraDays||0,s.totalPayingDays,
+    s.grossEarned,s.pfAmount,s.esiAmount,s.netPay
+  ]);});
+  return rows.map(r=>r.map(c=>'"'+String(c==null?'':c).replace(/"/g,'""')+'"').join(',')).join('\n');
+}
+function buildReportHTML(){
+  const period=periodLabel();
+  const showMoney=salaryRevealed;
+  const head=['Staff','Role','Present','Late','Early','OT','Half','Absent','Week-off','Worked Off-day','Paying Days','Attendance %'];
+  if(showMoney)head.push('Gross','PF','ESI','Net Pay');
+  const body=lastReportData.map(s=>{
+    const cells=[s.staff.name,s.staff.role||'',s.present,s.late,s.earlyOut,s.overtime,s.halfDay,s.absent,s.paidOffDays||0,s.extraDays||0,s.totalPayingDays,s.pct+'%'];
+    if(showMoney)cells.push('₹'+s.grossEarned.toLocaleString('en-IN'),'₹'+s.pfAmount.toLocaleString('en-IN'),'₹'+s.esiAmount.toLocaleString('en-IN'),'₹'+s.netPay.toLocaleString('en-IN'));
+    return '<tr>'+cells.map((c,i)=>'<td'+(i===0?' class="nm"':'')+'>'+escHtml(String(c))+'</td>').join('')+'</tr>';
+  }).join('');
+  const totals=lastReportData.reduce((a,s)=>({p:a.p+s.present,l:a.l+s.late,ab:a.ab+s.absent,net:a.net+s.netPay}),{p:0,l:0,ab:0,net:0});
+  return '<!DOCTYPE html><html><head><meta charset="utf-8">'+
+  '<meta name="viewport" content="width=device-width,initial-scale=1">'+
+  '<title>Varnica Jewels — Attendance Report</title><style>'+
+  'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#F8EEE8;color:#2C1A0A;padding:18px;margin:0}'+
+  '.box{max-width:1000px;margin:0 auto;background:#FFFAF7;border:1px solid #E8D4C8;border-radius:14px;padding:18px}'+
+  'h1{font-size:22px;color:#5C4220;margin:0 0 2px}.sub{color:#7A5C3A;font-size:13px;margin-bottom:14px}'+
+  '.sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}'+
+  '.sc{flex:1;min-width:110px;background:#FFF5EF;border:1px solid #F2E4DA;border-radius:10px;padding:11px;text-align:center}'+
+  '.sc b{display:block;font-size:20px}.sc span{font-size:10px;color:#B89878;text-transform:uppercase;letter-spacing:.4px}'+
+  'table{width:100%;border-collapse:collapse;font-size:12px}'+
+  'th{background:#F2E4DA;padding:8px 6px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:#7A5C3A;white-space:nowrap}'+
+  'td{padding:7px 6px;border-bottom:1px solid #F2E4DA;text-align:center}'+
+  'td.nm{text-align:left;font-weight:600}'+
+  '.ft{margin-top:14px;font-size:11px;color:#B89878;text-align:center}'+
+  '@media(max-width:600px){.wrapt{overflow-x:auto}table{min-width:760px}}'+
+  '</style></head><body><div class="box">'+
+  '<h1>Varnica Jewels — Attendance Report</h1>'+
+  '<div class="sub">Period: '+escHtml(period)+'</div>'+
+  '<div class="sum">'+
+    '<div class="sc"><b style="color:#4A8C5C">'+totals.p+'</b><span>Total Present</span></div>'+
+    '<div class="sc"><b style="color:#C47A20">'+totals.l+'</b><span>Total Late</span></div>'+
+    '<div class="sc"><b style="color:#C44B35">'+totals.ab+'</b><span>Total Absent</span></div>'+
+    (showMoney?'<div class="sc"><b style="color:#4A8C5C">₹'+totals.net.toLocaleString('en-IN')+'</b><span>Total Net Pay</span></div>':'')+
+  '</div>'+
+  '<div class="wrapt"><table><thead><tr>'+head.map(h=>'<th>'+escHtml(h)+'</th>').join('')+'</tr></thead><tbody>'+body+'</tbody></table></div>'+
+  (showMoney?'':'<div class="ft">Salary columns are hidden. Tap "Show Salary" in the app before exporting to include them.</div>')+
+  '<div class="ft">Generated by Varnica Jewels Attendance · '+new Date().toLocaleString('en-IN')+'</div>'+
+  '</div></body></html>';
+}
+function shareReportExcel(){
+  if(!lastReportData||!lastReportData.length){showToast('Please generate a report first');return;}
+  shareFile('varnica-payroll-'+toKey(new Date())+'.csv','text/csv',buildPayrollCSVText(),'Varnica Jewels — Payroll ('+periodLabel()+')');
+}
+function shareReportHTML(){
+  if(!lastReportData||!lastReportData.length){showToast('Please generate a report first');return;}
+  shareFile('varnica-report-'+toKey(new Date())+'.html','text/html',buildReportHTML(),'Varnica Jewels — Attendance Report ('+periodLabel()+')');
+}
 function chartEmpty(msg){return '<div style="text-align:center;padding:26px 10px;color:var(--text3);font-size:12px">'+msg+'</div>';}
 
 function renderTrendChart(){
@@ -3034,7 +3184,8 @@ function renderTrendChart(){
   svg+='<polyline points="'+pts.join(' ')+'" fill="none" stroke="#B8955A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
   days.forEach((p,i)=>{
     const c=p.isOff?'#B89878':(p.pct>=75?'#4A8C5C':p.pct>=40?'#C47A20':'#C44B35');
-    svg+='<circle cx="'+x(i)+'" cy="'+y(p.pct)+'" r="'+(i===days.length-1?3.6:2.4)+'" fill="'+c+'"><title>'+p.key+': '+p.present+'/'+staff.length+' ('+p.pct+'%)'+(p.isOff?' — week off':'')+'</title></circle>';
+    svg+='<circle cx="'+x(i)+'" cy="'+y(p.pct)+'" r="10" fill="transparent" style="cursor:pointer" onclick="goToReportForDate(\''+p.key+'\')"><title>'+p.key+': '+p.present+'/'+staff.length+' ('+p.pct+'%)'+(p.isOff?' — week off':'')+' — tap to open</title></circle>';
+    svg+='<circle cx="'+x(i)+'" cy="'+y(p.pct)+'" r="'+(i===days.length-1?3.6:2.4)+'" fill="'+c+'" style="pointer-events:none"/>';
     if(i%3===0||i===days.length-1){
       svg+='<text x="'+x(i)+'" y="'+(H-9)+'" font-size="7" fill="#B89878" text-anchor="middle">'+p.d.getDate()+'/'+(p.d.getMonth()+1)+'</text>';
     }
@@ -3089,7 +3240,7 @@ function renderStaffRankChart(){
   el.innerHTML=rows.map((r,i)=>{
     const c=r.pct>=85?'#4A8C5C':r.pct>=60?'#C47A20':'#C44B35';
     const medal=i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':'';
-    return '<div style="margin-bottom:9px">'+
+    return '<div onclick="goToStaffReport('+JSON.stringify(r.name).replace(/"/g,'&quot;')+')" style="margin-bottom:9px;cursor:pointer">'+
       '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
         '<span style="font-weight:600">'+medal+escHtml(r.name)+'</span>'+
         '<span style="color:var(--text2)">'+r.present+'/'+dates.length+' d'+(r.late?' · <span style="color:var(--orange)">'+r.late+' late</span>':'')+' &nbsp;<b style="color:'+c+'">'+r.pct+'%</b></span>'+
@@ -3146,6 +3297,41 @@ function toKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'
 function timeDiffMin(a,b){const[ah,am]=a.split(':').map(Number);const[bh,bm]=b.split(':').map(Number);return(bh*60+bm)-(ah*60+am);}
 function timeDiffHours(a,b){return timeDiffMin(a,b)/60;}
 function getTimeOfDay(){const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';}
+let pendingReasonDate=null;
+function findPendingReasonDay(staff){
+  // Returns the OLDEST day in the last 7 that still needs a reason, or null.
+  const att=getAtt(),todayKey=toKey(new Date());
+  for(let back=7;back>=1;back--){
+    const d=new Date();d.setDate(d.getDate()-back);
+    const key=toKey(d);
+    if(key>=todayKey)continue;
+    if(isWeekOff(d)||isHoliday(key))continue;
+    const rec=att.find(a=>a.staffId===staff.id&&a.date===key);
+    if(!rec||!rec.inTime){
+      // Never punched that day. Only ask if it hasn't already been answered.
+      if(rec&&(rec.absentReason||rec.reason))continue;
+      return{date:key,status:'Absent'};
+    }
+    const needs=(rec.status==='Late'||rec.status==='Early Out'||rec.status==='Half Day');
+    if(needs&&!rec.reason&&!rec.earlyOutReason&&!rec.absentReason)return{date:key,status:rec.status};
+  }
+  return null;
+}
+function getStaffShiftHours(staff){
+  // Length of this staff member's own fixed shift, in hours
+  const fallback=(getSettings().halfDay||4)*2;
+  if(!staff||!staff.shiftIn||!staff.shiftOut)return fallback;
+  const a=staff.shiftIn.split(':').map(Number),b=staff.shiftOut.split(':').map(Number);
+  if(a.length<2||b.length<2||isNaN(a[0])||isNaN(b[0]))return fallback;
+  let mins=(b[0]*60+(b[1]||0))-(a[0]*60+(a[1]||0));
+  if(mins<=0)mins+=24*60;            // overnight shift
+  const hrs=mins/60;
+  return (hrs>0&&hrs<=24)?hrs:fallback;
+}
+function getHalfDayThreshold(staff){
+  // Half Day = worked less than half of THIS staff member's own shift length
+  return getStaffShiftHours(staff)/2;
+}
 function isWeekOff(date){return date.getDay()===parseInt(getSettings().weekOff||0);}
 function isHoliday(ds){return(getSettings().holidays||[]).some(h=>h.date===ds);}
 function addDaysToKey(dateStr,delta){const d=new Date(dateStr+'T00:00:00');d.setDate(d.getDate()+delta);return toKey(d);}
