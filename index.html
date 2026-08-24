@@ -195,6 +195,10 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 
 /* ADMIN */
 #adminPage{background:var(--blush);}
+@media(min-width:900px){
+  #adminPage .tab-pane,#adminPage>.admin-body,#adminPage .card{max-width:860px;margin-left:auto;margin-right:auto;}
+  #adminPage .card{margin-bottom:12px;}
+}
 .admin-tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--blush3);flex-shrink:0;overflow-x:auto;}
 .tab-btn{flex:0 0 auto;min-width:78px;padding:11px 10px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:"DM Sans",sans-serif;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;transition:all 0.2s;}
 .tab-btn.active{color:var(--brand-dark);border-bottom-color:var(--brand);}
@@ -1878,9 +1882,9 @@ function confirmOutPunch(){
   const earlyMin=timeDiffMin(timeStr,shiftEnd);
   const vpsPhotoEnabled=settings.localPhotoSave!==false;
   rec.outTime=timeStr;rec.hours=hrs;
-  if(hrs<getHalfDayThreshold(staff))rec.status='Half Day';
-  else if(earlyMin>settings.earlyOut)warningType='early';
-  else if(timeDiffMin(shiftEnd,timeStr)>30)rec.status='Overtime';
+  const cls=classifyOutStatus(staff,hrs,earlyMin,timeStr);
+  rec.status=cls.status;
+  warningType=cls.warningType;
   if(!setAtt(att))return;
   const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(vpsPhotoEnabled&&photo)backgroundUploadPhoto(staff,todayKey,'out',photo);
@@ -1981,7 +1985,7 @@ function skipWarningReason(){
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(rec){
     if(warningType==='late')rec.status='Late';
-    else rec.status=rec.hours<getHalfDayThreshold(staff)?'Half Day':'Early Out';
+    else rec.status=classifyOutStatus(staff,rec.hours||0,0,rec.outTime||'').status;
     rec.reason='(skipped)';
     if(setAtt(att))syncRecord(rec);
   }
@@ -1997,7 +2001,7 @@ function submitWarning(){
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(rec){
     if(warningType==='late'){rec.status='Late';rec.reason=reason;}
-    else{rec.earlyOutReason=reason;rec.status=rec.hours<getHalfDayThreshold(staff)?'Half Day':'Early Out';rec.reason=reason;}
+    else{rec.earlyOutReason=reason;rec.status=classifyOutStatus(staff,rec.hours||0,0,rec.outTime||'').status;rec.reason=reason;}
     if(!setAtt(att)){
       const m=document.getElementById('wpReqMsg');m.style.display='block';m.textContent='❌ Save fail hua (storage full). Maine auto-cleanup kar diya — "Submit" phir se dabao.';
       return;
@@ -2561,7 +2565,7 @@ function renderReportChart(){
   let donut='';
   if(total>0){
     const R=52,SW=17,C=2*Math.PI*R;let off=0;
-    donut='<svg viewBox="0 0 128 128" style="width:124px;height:124px;flex-shrink:0"><g transform="rotate(-90 64 64)">';
+    donut='<svg viewBox="0 0 128 128" style="width:112px;height:112px;flex-shrink:0"><g transform="rotate(-90 64 64)">';
     segs.forEach(s=>{
       const len=C*s.v/total;
       donut+='<circle cx="64" cy="64" r="'+R+'" fill="none" stroke="'+s.c+'" stroke-width="'+SW+'" stroke-dasharray="'+len+' '+(C-len)+'" stroke-dashoffset="'+(-off)+'"><title>'+s.n+': '+s.v+'</title></circle>';
@@ -3056,22 +3060,27 @@ function openDayFromChart(dateKey){
 }
 function goToReportForDate(dateKey){
   // From the Dashboard trend chart: jump to the Report tab for that single day
-  showPage('admin');
-  if(typeof aTab==='function')aTab('report');
-  const f=document.getElementById('rptFrom'),t=document.getElementById('rptTo');
-  if(f&&t){f.value=dateKey;t.value=dateKey;}
-  if(typeof generateReport==='function')generateReport();
-  setTimeout(()=>{if(typeof setReportView==='function')setReportView('day');},220);
-  showToast('📅 Showing report for '+fmtDateLabel(dateKey));
+  try{
+    aTab('report');
+    const f=document.getElementById('rptFrom'),t=document.getElementById('rptTo');
+    if(f&&t){f.value=dateKey;t.value=dateKey;}
+    generateReport();
+    setTimeout(()=>{setReportView('day');},220);
+    showToast('📅 Showing report for '+fmtDateLabel(dateKey));
+  }catch(e){console.error('goToReportForDate',e);showToast('Could not open that day — please use the Report tab');}
 }
 function goToStaffReport(staffName){
-  showPage('admin');
-  if(typeof aTab==='function')aTab('report');
-  if(typeof generateReport==='function')generateReport();
-  setTimeout(()=>{
-    if(typeof setReportView==='function')setReportView('staff');
-    _expandAndScroll('#reportTable details',staffName);
-  },260);
+  // Dashboard is already inside the Admin page, so only the TAB needs switching.
+  try{
+    aTab('report');
+    const f=document.getElementById('rptFrom'),t=document.getElementById('rptTo');
+    if(f&&t&&(!f.value||!t.value))setDefaultDates();
+    generateReport();
+    setTimeout(()=>{
+      setReportView('staff');
+      _expandAndScroll('#reportTable details',staffName);
+    },260);
+  }catch(e){console.error('goToStaffReport',e);showToast('Could not open that staff — please use the Report tab');}
 }
 // ══════════════════════════════════════════════
 // SHARE REPORT AS FILE (Excel / HTML) VIA WHATSAPP
@@ -3109,41 +3118,90 @@ function buildPayrollCSVText(){
 function buildReportHTML(){
   const period=periodLabel();
   const showMoney=salaryRevealed;
-  const head=['Staff','Role','Present','Late','Early','OT','Half','Absent','Week-off','Worked Off-day','Paying Days','Attendance %'];
-  if(showMoney)head.push('Gross','PF','ESI','Net Pay');
-  const body=lastReportData.map(s=>{
-    const cells=[s.staff.name,s.staff.role||'',s.present,s.late,s.earlyOut,s.overtime,s.halfDay,s.absent,s.paidOffDays||0,s.extraDays||0,s.totalPayingDays,s.pct+'%'];
-    if(showMoney)cells.push('₹'+s.grossEarned.toLocaleString('en-IN'),'₹'+s.pfAmount.toLocaleString('en-IN'),'₹'+s.esiAmount.toLocaleString('en-IN'),'₹'+s.netPay.toLocaleString('en-IN'));
-    return '<tr>'+cells.map((c,i)=>'<td'+(i===0?' class="nm"':'')+'>'+escHtml(String(c))+'</td>').join('')+'</tr>';
+  const tot=lastReportData.reduce((a,s)=>({p:a.p+s.present,l:a.l+s.late,ab:a.ab+s.absent,net:a.net+s.netPay}),{p:0,l:0,ab:0,net:0});
+  const stColor=st=>st==='Absent'?'#C44B35':(st==='Late'||st==='Early Out'||st==='Half Day')?'#C47A20':st==='Extra Day'?'#8B6A35':(st==='Present'||st==='Overtime')?'#4A8C5C':'#B89878';
+
+  // ── Summary: one compact card per staff (no wide table = no sideways scrolling) ──
+  const summaryCards=lastReportData.map(s=>{
+    const pc=s.pct>=85?'#4A8C5C':s.pct>=60?'#C47A20':'#C44B35';
+    const chips=[
+      s.present?['P',s.present,'#4A8C5C']:null,
+      s.late?['Late',s.late,'#C47A20']:null,
+      s.overtime?['OT',s.overtime,'#3A6EA8']:null,
+      s.earlyOut?['Early',s.earlyOut,'#D4B483']:null,
+      s.halfDay?['Half',s.halfDay,'#B8955A']:null,
+      s.absent?['Abs',s.absent,'#C44B35']:null
+    ].filter(Boolean).map(c=>'<span class="chip" style="background:'+c[2]+'1f;color:'+c[2]+'">'+c[0]+' '+c[1]+'</span>').join('');
+    const money=showMoney?'<div class="money">Gross ₹'+s.grossEarned.toLocaleString('en-IN')+(s.pfAmount?' · PF ₹'+s.pfAmount.toLocaleString('en-IN'):'')+(s.esiAmount?' · ESI ₹'+s.esiAmount.toLocaleString('en-IN'):'')+' · <b>Net ₹'+s.netPay.toLocaleString('en-IN')+'</b></div>':'';
+    return '<div class="scard"><div class="srow"><div class="snm">'+escHtml(s.staff.name)+(s.staff.role?' <span class="rol">'+escHtml(s.staff.role)+'</span>':'')+'</div><div class="spc" style="color:'+pc+'">'+s.pct+'%</div></div>'+
+      '<div class="chips">'+chips+'</div>'+
+      '<div class="pay">🧮 '+s.totalPayingDays+' paying days &nbsp;·&nbsp; '+s.present+' present + '+(s.halfDay?s.halfDay+' half + ':'')+(s.paidOffDays||0)+' week-off'+(s.extraDays?' + '+s.extraDays+' worked off-day':'')+'</div>'+money+'</div>';
   }).join('');
-  const totals=lastReportData.reduce((a,s)=>({p:a.p+s.present,l:a.l+s.late,ab:a.ab+s.absent,net:a.net+s.netPay}),{p:0,l:0,ab:0,net:0});
-  return '<!DOCTYPE html><html><head><meta charset="utf-8">'+
+
+  // ── Detail: collapsible per staff, day-wise with punch times and reasons ──
+  const detailBlocks=lastReportData.map(s=>{
+    const days=s.rows.map(r=>{
+      const reason=r.reason||'';
+      return '<div class="d"><div class="dl"><span class="dt">'+escHtml(fmtDateLabel(r.date))+'</span>'+
+        '<span class="ds" style="color:'+stColor(r.status)+'">'+escHtml(r.status)+'</span></div>'+
+        '<div class="dr"><span>IN '+escHtml(r.inTime||'–')+'</span><span>OUT '+escHtml(r.outTime||'–')+'</span><span>'+escHtml(r.hours||'–')+'</span></div>'+
+        (reason?'<div class="dz">💬 '+escHtml(reason)+'</div>':'')+
+      '</div>';
+    }).join('');
+    return '<details class="acc"><summary><span class="anm">'+escHtml(s.staff.name)+'</span>'+
+      '<span class="amt">'+s.present+'P · '+s.absent+'A · '+s.pct+'%</span></summary>'+
+      '<div class="abody">'+days+'</div></details>';
+  }).join('');
+
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'+
   '<meta name="viewport" content="width=device-width,initial-scale=1">'+
   '<title>Varnica Jewels — Attendance Report</title><style>'+
-  'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#F8EEE8;color:#2C1A0A;padding:18px;margin:0}'+
-  '.box{max-width:1000px;margin:0 auto;background:#FFFAF7;border:1px solid #E8D4C8;border-radius:14px;padding:18px}'+
-  'h1{font-size:22px;color:#5C4220;margin:0 0 2px}.sub{color:#7A5C3A;font-size:13px;margin-bottom:14px}'+
-  '.sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}'+
-  '.sc{flex:1;min-width:110px;background:#FFF5EF;border:1px solid #F2E4DA;border-radius:10px;padding:11px;text-align:center}'+
-  '.sc b{display:block;font-size:20px}.sc span{font-size:10px;color:#B89878;text-transform:uppercase;letter-spacing:.4px}'+
-  'table{width:100%;border-collapse:collapse;font-size:12px}'+
-  'th{background:#F2E4DA;padding:8px 6px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:#7A5C3A;white-space:nowrap}'+
-  'td{padding:7px 6px;border-bottom:1px solid #F2E4DA;text-align:center}'+
-  'td.nm{text-align:left;font-weight:600}'+
-  '.ft{margin-top:14px;font-size:11px;color:#B89878;text-align:center}'+
-  '@media(max-width:600px){.wrapt{overflow-x:auto}table{min-width:760px}}'+
+  '*{box-sizing:border-box;margin:0;padding:0}'+
+  'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F8EEE8;color:#2C1A0A;padding:14px;line-height:1.45;-webkit-text-size-adjust:100%}'+
+  '.box{max-width:820px;margin:0 auto}'+
+  'h1{font-size:19px;color:#5C4220;margin-bottom:2px}'+
+  '.sub{color:#7A5C3A;font-size:12px;margin-bottom:12px}'+
+  'h2{font-size:14px;color:#5C4220;margin:20px 0 9px;padding-bottom:5px;border-bottom:1px solid #E8D4C8}'+
+  '.sum{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}'+
+  '.sc{flex:1;min-width:88px;background:#FFFAF7;border:1px solid #E8D4C8;border-radius:10px;padding:10px 8px;text-align:center}'+
+  '.sc b{display:block;font-size:18px}.sc span{font-size:9px;color:#B89878;text-transform:uppercase;letter-spacing:.4px}'+
+  '.scard{background:#FFFAF7;border:1px solid #E8D4C8;border-radius:11px;padding:11px 12px;margin-bottom:8px}'+
+  '.srow{display:flex;justify-content:space-between;align-items:baseline;gap:8px}'+
+  '.snm{font-weight:700;font-size:14px}'+
+  '.rol{font-weight:400;font-size:11px;color:#B89878}'+
+  '.spc{font-weight:800;font-size:15px}'+
+  '.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}'+
+  '.chip{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}'+
+  '.pay{font-size:11.5px;color:#7A5C3A;margin-top:7px}'+
+  '.money{font-size:12px;color:#2C1A0A;margin-top:5px;padding-top:6px;border-top:1px dashed #E8D4C8}'+
+  '.acc{background:#FFFAF7;border:1px solid #E8D4C8;border-radius:11px;margin-bottom:7px;overflow:hidden}'+
+  '.acc summary{list-style:none;cursor:pointer;padding:11px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}'+
+  '.acc summary::-webkit-details-marker{display:none}'+
+  '.acc summary:after{content:"▾";color:#B89878;font-size:12px;margin-left:4px}'+
+  '.acc[open] summary:after{content:"▴"}'+
+  '.anm{font-weight:700;font-size:13.5px;flex:1}'+
+  '.amt{font-size:11px;color:#7A5C3A;white-space:nowrap}'+
+  '.abody{padding:0 12px 10px}'+
+  '.d{padding:8px 0;border-top:1px solid #F2E4DA}'+
+  '.dl{display:flex;justify-content:space-between;align-items:baseline;gap:8px}'+
+  '.dt{font-size:12.5px;font-weight:600}'+
+  '.ds{font-size:12px;font-weight:700}'+
+  '.dr{display:flex;gap:12px;font-size:11.5px;color:#7A5C3A;margin-top:3px;font-variant-numeric:tabular-nums}'+
+  '.dz{font-size:11.5px;color:#C47A20;font-style:italic;margin-top:3px}'+
+  '.ft{margin-top:16px;font-size:10.5px;color:#B89878;text-align:center;line-height:1.6}'+
   '</style></head><body><div class="box">'+
   '<h1>Varnica Jewels — Attendance Report</h1>'+
   '<div class="sub">Period: '+escHtml(period)+'</div>'+
   '<div class="sum">'+
-    '<div class="sc"><b style="color:#4A8C5C">'+totals.p+'</b><span>Total Present</span></div>'+
-    '<div class="sc"><b style="color:#C47A20">'+totals.l+'</b><span>Total Late</span></div>'+
-    '<div class="sc"><b style="color:#C44B35">'+totals.ab+'</b><span>Total Absent</span></div>'+
-    (showMoney?'<div class="sc"><b style="color:#4A8C5C">₹'+totals.net.toLocaleString('en-IN')+'</b><span>Total Net Pay</span></div>':'')+
+    '<div class="sc"><b style="color:#4A8C5C">'+tot.p+'</b><span>Present</span></div>'+
+    '<div class="sc"><b style="color:#C47A20">'+tot.l+'</b><span>Late</span></div>'+
+    '<div class="sc"><b style="color:#C44B35">'+tot.ab+'</b><span>Absent</span></div>'+
+    (showMoney?'<div class="sc"><b style="color:#4A8C5C">₹'+tot.net.toLocaleString('en-IN')+'</b><span>Net Pay</span></div>':'')+
   '</div>'+
-  '<div class="wrapt"><table><thead><tr>'+head.map(h=>'<th>'+escHtml(h)+'</th>').join('')+'</tr></thead><tbody>'+body+'</tbody></table></div>'+
-  (showMoney?'':'<div class="ft">Salary columns are hidden. Tap "Show Salary" in the app before exporting to include them.</div>')+
-  '<div class="ft">Generated by Varnica Jewels Attendance · '+new Date().toLocaleString('en-IN')+'</div>'+
+  '<h2>Staff Summary</h2>'+summaryCards+
+  '<h2>Day-wise Detail — tap a name to open</h2>'+detailBlocks+
+  (showMoney?'':'<div class="ft">Salary is hidden. Tap "Show Salary" in the app before exporting to include it.</div>')+
+  '<div class="ft">Generated by Varnica Jewels Attendance<br>'+new Date().toLocaleString('en-IN')+'</div>'+
   '</div></body></html>';
 }
 function shareReportExcel(){
@@ -3174,7 +3232,7 @@ function renderTrendChart(){
   const y=v=>PT+ih-(ih*v/100);
   const pts=days.map((p,i)=>x(i)+','+y(p.pct));
   const area='M'+x(0)+','+(PT+ih)+' L'+pts.join(' L')+' L'+x(days.length-1)+','+(PT+ih)+' Z';
-  let svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">';
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" style="width:100%;max-height:200px;height:auto;display:block">';
   [0,50,100].forEach(g=>{
     svg+='<line x1="'+PL+'" y1="'+y(g)+'" x2="'+(W-PR)+'" y2="'+y(g)+'" stroke="#F2E4DA" stroke-width="1"/>';
     svg+='<text x="'+(PL-5)+'" y="'+(y(g)+3)+'" font-size="7" fill="#B89878" text-anchor="end">'+g+'%</text>';
@@ -3210,7 +3268,7 @@ function renderTodayDonut(){
   if(!segs.length){el.innerHTML=chartEmpty('No punches yet today');return;}
   const R=52,SW=17,C=2*Math.PI*R,cx=64,cy=64;
   let off=0;
-  let svg='<svg viewBox="0 0 128 128" style="width:128px;height:128px;flex-shrink:0"><g transform="rotate(-90 64 64)">';
+  let svg='<svg viewBox="0 0 128 128" style="width:112px;height:112px;flex-shrink:0"><g transform="rotate(-90 64 64)">';
   segs.forEach(s=>{
     const len=C*s.v/total;
     svg+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="'+s.c+'" stroke-width="'+SW+'" stroke-dasharray="'+len+' '+(C-len)+'" stroke-dashoffset="'+(-off)+'"><title>'+s.n+': '+s.v+'</title></circle>';
@@ -3233,19 +3291,44 @@ function renderStaffRankChart(){
   const dates=getDatesInRange(from,to).filter(d=>!isWeekOff(new Date(d+'T00:00:00'))&&!isHoliday(d));
   if(!dates.length){el.innerHTML=chartEmpty('No working days yet this month');return;}
   const rows=staff.map(s=>{
-    const present=dates.filter(d=>{const r=att.find(a=>a.staffId===s.id&&a.date===d);return r&&r.inTime;}).length;
-    const late=dates.filter(d=>{const r=att.find(a=>a.staffId===s.id&&a.date===d);return r&&r.status==='Late';}).length;
-    return{name:s.name,present,late,pct:Math.round(present/dates.length*100)};
+    let onTime=0,late=0,ot=0,early=0,half=0,absent=0;
+    dates.forEach(d=>{
+      const r=att.find(a=>a.staffId===s.id&&a.date===d);
+      if(!r||!r.inTime){absent++;return;}
+      if(r.status==='Late')late++;
+      else if(r.status==='Overtime')ot++;
+      else if(r.status==='Early Out')early++;
+      else if(r.status==='Half Day')half++;
+      else if(r.status==='Absent')absent++;
+      else onTime++;
+    });
+    const present=onTime+late+ot+early;
+    return{id:s.id,name:s.name,onTime,late,ot,early,half,absent,present,pct:Math.round(present/dates.length*100)};
   }).sort((a,b)=>b.pct-a.pct);
-  el.innerHTML=rows.map((r,i)=>{
+  const legend='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:11px;font-size:10.5px;color:var(--text2)">'+
+    [['On time','#4A8C5C'],['Late','#C47A20'],['Overtime','#3A6EA8'],['Early Out','#D4B483'],['Half Day','#B8955A'],['Absent','#C44B35']]
+    .map(x=>'<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+x[1]+';display:inline-block"></span>'+x[0]+'</span>').join('')+
+    '</div>';
+  el.innerHTML=legend+rows.map((r,i)=>{
     const c=r.pct>=85?'#4A8C5C':r.pct>=60?'#C47A20':'#C44B35';
     const medal=i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':'';
+    const den=Math.max(1,dates.length);
+    const segs=[
+      {v:r.onTime,c:'#4A8C5C',n:'On time'},
+      {v:r.late,c:'#C47A20',n:'Late'},
+      {v:r.ot,c:'#3A6EA8',n:'Overtime'},
+      {v:r.early,c:'#D4B483',n:'Early Out'},
+      {v:r.half,c:'#B8955A',n:'Half Day'},
+      {v:r.absent,c:'#C44B35',n:'Absent'}
+    ].filter(x=>x.v>0);
+    const fills=segs.map(x=>'<div style="width:'+(x.v/den*100)+'%;background:'+x.c+'" title="'+x.n+': '+x.v+'"></div>').join('');
+    const detail=[r.onTime?r.onTime+'P':'',r.late?r.late+'L':'',r.ot?r.ot+'OT':'',r.early?r.early+'E':'',r.half?r.half+'H':'',r.absent?r.absent+'A':''].filter(Boolean).join(' · ');
     return '<div onclick="goToStaffReport('+JSON.stringify(r.name).replace(/"/g,'&quot;')+')" style="margin-bottom:9px;cursor:pointer">'+
-      '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
-        '<span style="font-weight:600">'+medal+escHtml(r.name)+'</span>'+
-        '<span style="color:var(--text2)">'+r.present+'/'+dates.length+' d'+(r.late?' · <span style="color:var(--orange)">'+r.late+' late</span>':'')+' &nbsp;<b style="color:'+c+'">'+r.pct+'%</b></span>'+
+      '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;gap:8px">'+
+        '<span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+medal+escHtml(r.name)+'</span>'+
+        '<span style="color:var(--text2);white-space:nowrap">'+detail+' &nbsp;<b style="color:'+c+'">'+r.pct+'%</b></span>'+
       '</div>'+
-      '<div style="height:7px;background:var(--blush2);border-radius:20px;overflow:hidden"><div style="height:100%;width:'+r.pct+'%;background:'+c+';border-radius:20px"></div></div>'+
+      '<div style="height:8px;background:var(--blush2);border-radius:20px;overflow:hidden;display:flex">'+fills+'</div>'+
     '</div>';
   }).join('');
 }
@@ -3316,6 +3399,26 @@ function findPendingReasonDay(staff){
     if(needs&&!rec.reason&&!rec.earlyOutReason&&!rec.absentReason)return{date:key,status:rec.status};
   }
   return null;
+}
+// Bands are % of the staff member's OWN shift length. Tune here if the rule changes.
+const HALFDAY_MIN_PCT=0.50;   // below this = not enough work to count at all -> Absent
+const FULLDAY_MIN_PCT=0.90;   // at or above this = counts as a full day
+function classifyOutStatus(staff,hrs,earlyMin,timeStr){
+  // Single place that decides the OUT-punch status, used by every path so
+  // the punch screen, the reason popup and manual entry can never disagree.
+  const settings=getSettings();
+  const shiftHrs=getStaffShiftHours(staff);
+  const shiftEnd=staff.shiftOut||'18:00';
+  if(hrs<shiftHrs*HALFDAY_MIN_PCT){
+    // Worked less than half the shift — e.g. punched in and out 2 minutes later.
+    return{status:'Absent',warningType:'early'};
+  }
+  if(hrs<shiftHrs*FULLDAY_MIN_PCT){
+    return{status:'Half Day',warningType:'early'};
+  }
+  if(earlyMin>settings.earlyOut)return{status:'Early Out',warningType:'early'};
+  if(timeDiffMin(shiftEnd,timeStr)>30)return{status:'Overtime',warningType:null};
+  return{status:'Present',warningType:null};
 }
 function getStaffShiftHours(staff){
   // Length of this staff member's own fixed shift, in hours
