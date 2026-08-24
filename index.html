@@ -196,7 +196,20 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 /* ADMIN */
 #adminPage{background:var(--blush);}
 @media(min-width:900px){
-  #adminPage .tab-pane,#adminPage>.admin-body,#adminPage .card{max-width:860px;margin-left:auto;margin-right:auto;}
+@media(min-width:900px){
+  .admin-scroll{max-width:1400px;margin:0 auto;width:100%;padding:18px 24px;}
+  /* Dashboard becomes a real 2-column layout so the screen is actually used */
+  #tabDash{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-content:start;}
+  #tabDash>.stats-grid{grid-column:1 / -1;grid-template-columns:repeat(4,1fr);}
+  #tabDash>.card{margin:0;}
+  #tabDash>.card.full{grid-column:1 / -1;}
+  /* Report / other tabs: readable column width, still centred */
+  #tabReport,#tabStaff,#tabSettings,#tabManual,#tabAppr,#tabSync{max-width:980px;margin:0 auto;width:100%;}
+}
+@media(min-width:1400px){
+  #tabDash{grid-template-columns:1fr 1fr 1fr;}
+  #tabDash>.stats-grid{grid-template-columns:repeat(4,1fr);}
+}
   #adminPage .card{margin-bottom:12px;}
 }
 .admin-tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--blush3);flex-shrink:0;overflow-x:auto;}
@@ -623,14 +636,14 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div class="sec-title">🎯 Today at a Glance</div>
       <div id="chartToday"></div>
     </div>
-    <div class="card">
+    <div class="card full">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="sec-title" style="margin-bottom:0">🏆 This Month — Staff Attendance</div>
         <div style="font-size:10px;color:var(--text3)">by present days</div>
       </div>
       <div id="chartStaffRank"></div>
     </div>
-    <div class="card">
+    <div class="card full">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div class="sec-title" style="margin-bottom:0">📋 Today's Log</div>
         <div style="font-size:10px;color:var(--text3)" id="lastSyncTime"></div>
@@ -3282,6 +3295,8 @@ function renderTodayDonut(){
   el.innerHTML='<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:center"><div>'+svg+'</div><div style="flex:1;min-width:130px">'+legend+'</div></div>';
 }
 
+let _rankExpanded=false;
+function toggleRankList(){_rankExpanded=!_rankExpanded;renderStaffRankChart();}
 function renderStaffRankChart(){
   const el=document.getElementById('chartStaffRank');if(!el)return;
   const staff=getStaff();if(!staff.length){el.innerHTML=chartEmpty('No staff added yet');return;}
@@ -3309,9 +3324,33 @@ function renderStaffRankChart(){
     [['On time','#4A8C5C'],['Late','#C47A20'],['Overtime','#3A6EA8'],['Early Out','#D4B483'],['Half Day','#B8955A'],['Absent','#C44B35']]
     .map(x=>'<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+x[1]+';display:inline-block"></span>'+x[0]+'</span>').join('')+
     '</div>';
-  el.innerHTML=legend+rows.map((r,i)=>{
+  // Headline: the one line a busy owner actually needs
+  const teamPct=Math.round(rows.reduce((a,r)=>a+r.pct,0)/rows.length);
+  const needAttention=rows.filter(r=>r.pct<60).length;
+  const headline='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:11px">'+
+    '<div style="flex:1;min-width:96px;background:var(--surface2);border:1px solid var(--blush2);border-radius:9px;padding:8px;text-align:center">'+
+      '<div style="font-size:19px;font-weight:800;color:'+(teamPct>=80?'#4A8C5C':teamPct>=60?'#C47A20':'#C44B35')+'">'+teamPct+'%</div>'+
+      '<div style="font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Team Average</div></div>'+
+    '<div style="flex:1;min-width:96px;background:var(--surface2);border:1px solid var(--blush2);border-radius:9px;padding:8px;text-align:center">'+
+      '<div style="font-size:19px;font-weight:800;color:#4A8C5C">'+rows.filter(r=>r.pct>=85).length+'</div>'+
+      '<div style="font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Doing Well</div></div>'+
+    '<div style="flex:1;min-width:96px;background:var(--surface2);border:1px solid var(--blush2);border-radius:9px;padding:8px;text-align:center">'+
+      '<div style="font-size:19px;font-weight:800;color:'+(needAttention?'#C44B35':'#4A8C5C')+'">'+needAttention+'</div>'+
+      '<div style="font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Need Attention</div></div>'+
+  '</div>';
+  // Collapsed by default: best 5 and worst 3 only — the rest behind one tap
+  let shown=rows,gapNote='';
+  if(!_rankExpanded&&rows.length>9){
+    shown=rows.slice(0,5).concat(rows.slice(-3));
+    gapNote='<div style="text-align:center;font-size:10.5px;color:var(--text3);margin:6px 0 9px">· · · '+(rows.length-8)+' more in between · · ·</div>';
+  }
+  const toggleBtn='<button onclick="event.stopPropagation();toggleRankList()" style="width:100%;margin-top:6px;padding:8px;border:1px solid var(--blush3);background:var(--surface2);border-radius:9px;font-family:inherit;font-size:11.5px;font-weight:600;color:var(--text2);cursor:pointer">'+
+    (_rankExpanded?'▲ Show less':'▼ Show all '+rows.length+' staff')+'</button>';
+  el.innerHTML=headline+legend+shown.map((r,i)=>{
     const c=r.pct>=85?'#4A8C5C':r.pct>=60?'#C47A20':'#C44B35';
-    const medal=i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':'';
+    const isTop=!_rankExpanded&&rows.length>9?i<5:true;
+    const rank=(!_rankExpanded&&rows.length>9&&i>=5)?rows.length-(8-i-1)-1:i;
+    const medal=rank===0?'🥇 ':rank===1?'🥈 ':rank===2?'🥉 ':'';
     const den=Math.max(1,dates.length);
     const segs=[
       {v:r.onTime,c:'#4A8C5C',n:'On time'},
@@ -3323,14 +3362,15 @@ function renderStaffRankChart(){
     ].filter(x=>x.v>0);
     const fills=segs.map(x=>'<div style="width:'+(x.v/den*100)+'%;background:'+x.c+'" title="'+x.n+': '+x.v+'"></div>').join('');
     const detail=[r.onTime?r.onTime+'P':'',r.late?r.late+'L':'',r.ot?r.ot+'OT':'',r.early?r.early+'E':'',r.half?r.half+'H':'',r.absent?r.absent+'A':''].filter(Boolean).join(' · ');
-    return '<div onclick="goToStaffReport('+JSON.stringify(r.name).replace(/"/g,'&quot;')+')" style="margin-bottom:9px;cursor:pointer">'+
+    const sep=(!_rankExpanded&&rows.length>9&&i===5)?gapNote:'';
+    return sep+'<div onclick="goToStaffReport('+JSON.stringify(r.name).replace(/"/g,'&quot;')+')" style="margin-bottom:9px;cursor:pointer">'+
       '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;gap:8px">'+
         '<span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+medal+escHtml(r.name)+'</span>'+
         '<span style="color:var(--text2);white-space:nowrap">'+detail+' &nbsp;<b style="color:'+c+'">'+r.pct+'%</b></span>'+
       '</div>'+
       '<div style="height:8px;background:var(--blush2);border-radius:20px;overflow:hidden;display:flex">'+fills+'</div>'+
     '</div>';
-  }).join('');
+  }).join('')+(rows.length>9?toggleBtn:'');
 }
 
 function renderDashCharts(){
