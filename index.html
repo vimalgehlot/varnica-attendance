@@ -206,8 +206,27 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
      badges still line up under each other (easier to scan than a left-bunched list). */
   #tabDash .log-item-collapse summary .log-item{max-width:470px;}
   #tabDash .log-item-detail{max-width:470px;}
-  /* Report / other tabs: readable column width, still centred */
-  #tabReport,#tabStaff,#tabSettings,#tabManual,#tabAppr,#tabSync{max-width:980px;margin:0 auto;width:100%;}
+  /* Report tab: sidebar (filters + chart) on the left, report itself on the right */
+  #tabReport{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start;}
+  #tabReport>.card:first-child{grid-column:1;grid-row:1;margin:0;}
+  #tabReport>#reportChartCard{grid-column:1;grid-row:2;margin:0;}
+  #tabReport>.report-toggle{grid-column:2;grid-row:1;margin:0;}
+  #tabReport>div[style*="justify-content:flex-end"]{grid-column:2;grid-row:2;margin:0;}
+  #tabReport>.report-sticky{grid-column:2;grid-row:3;}
+  #tabReport>#reportHighlights{grid-column:2;grid-row:4;}
+  #tabReport>#reportTable{grid-column:2;grid-row:5;}
+  #tabReport>.card:first-child,#tabReport>#reportChartCard{position:sticky;top:8px;}
+}
+@media(min-width:1500px){
+  #tabReport{grid-template-columns:380px 1fr;}
+}
+@media(min-width:900px) and (max-width:1099px){
+  /* Not enough room for a sidebar — go back to a single readable column */
+  #tabReport{display:block;max-width:900px;margin:0 auto;}
+}
+@media(min-width:900px){
+  /* These tabs are forms/lists — a readable centred column suits them better than full width */
+  #tabStaff,#tabSettings,#tabManual,#tabAppr,#tabSync{max-width:980px;margin:0 auto;width:100%;}
 }
 .admin-tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--blush3);flex-shrink:0;overflow-x:auto;}
 .tab-btn{flex:0 0 auto;min-width:78px;padding:11px 10px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:"DM Sans",sans-serif;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;transition:all 0.2s;}
