@@ -226,7 +226,17 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 }
 @media(min-width:900px){
   /* These tabs are forms/lists — a readable centred column suits them better than full width */
-  #tabStaff,#tabSettings,#tabManual,#tabAppr,#tabSync{max-width:980px;margin:0 auto;width:100%;}
+  #tabStaff,#tabManual,#tabAppr,#tabSync{max-width:980px;margin:0 auto;width:100%;}
+  /* Settings has many independent cards — lay them out in two columns */
+  #tabSettings{display:block;column-count:2;column-gap:16px;max-width:1300px;margin:0 auto;width:100%;}
+  #tabSettings>.card,#tabSettings>#settingsFullOnly>.card{break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid;display:inline-block;width:100%;margin:0 0 14px;}
+  #tabSettings>#settingsFullOnly{display:contents;}
+  /* Punch screen: camera on the left, status + today's list on the right */
+  .punch-scroll{display:grid;grid-template-columns:minmax(420px,1.25fr) minmax(320px,1fr);gap:20px;align-content:start;align-items:start;max-width:1240px;margin:0 auto;width:100%;padding:20px 24px;}
+  .punch-scroll>.camera-card{grid-column:1;grid-row:1 / span 2;max-width:none;width:100%;min-height:520px;}
+  .punch-scroll>.camera-card.cam-big{max-width:none;}
+  .punch-scroll>.status-card{grid-column:2;grid-row:1;max-width:none;width:100%;}
+  .punch-scroll>.log-card{grid-column:2;grid-row:2;max-width:none;width:100%;}
 }
 .admin-tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--blush3);flex-shrink:0;overflow-x:auto;}
 .tab-btn{flex:0 0 auto;min-width:78px;padding:11px 10px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:"DM Sans",sans-serif;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;transition:all 0.2s;}
