@@ -196,21 +196,18 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 /* ADMIN */
 #adminPage{background:var(--blush);}
 @media(min-width:900px){
-@media(min-width:900px){
   .admin-scroll{max-width:1400px;margin:0 auto;width:100%;padding:18px 24px;}
   /* Dashboard becomes a real 2-column layout so the screen is actually used */
   #tabDash{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-content:start;}
   #tabDash>.stats-grid{grid-column:1 / -1;grid-template-columns:repeat(4,1fr);}
   #tabDash>.card{margin:0;}
   #tabDash>.card.full{grid-column:1 / -1;}
+  /* Cap the log row width so a name and its status stay close together, while the
+     badges still line up under each other (easier to scan than a left-bunched list). */
+  #tabDash .log-item-collapse summary .log-item{max-width:470px;}
+  #tabDash .log-item-detail{max-width:470px;}
   /* Report / other tabs: readable column width, still centred */
   #tabReport,#tabStaff,#tabSettings,#tabManual,#tabAppr,#tabSync{max-width:980px;margin:0 auto;width:100%;}
-}
-@media(min-width:1400px){
-  #tabDash{grid-template-columns:1fr 1fr 1fr;}
-  #tabDash>.stats-grid{grid-template-columns:repeat(4,1fr);}
-}
-  #adminPage .card{margin-bottom:12px;}
 }
 .admin-tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--blush3);flex-shrink:0;overflow-x:auto;}
 .tab-btn{flex:0 0 auto;min-width:78px;padding:11px 10px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:"DM Sans",sans-serif;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;transition:all 0.2s;}
@@ -636,14 +633,14 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div class="sec-title">🎯 Today at a Glance</div>
       <div id="chartToday"></div>
     </div>
-    <div class="card full">
+    <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="sec-title" style="margin-bottom:0">🏆 This Month — Staff Attendance</div>
         <div style="font-size:10px;color:var(--text3)">by present days</div>
       </div>
       <div id="chartStaffRank"></div>
     </div>
-    <div class="card full">
+    <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div class="sec-title" style="margin-bottom:0">📋 Today's Log</div>
         <div style="font-size:10px;color:var(--text3)" id="lastSyncTime"></div>
