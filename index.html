@@ -610,6 +610,61 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
 
   <!-- MANUAL ATTENDANCE -->
   <div class="admin-scroll hidden" id="tabManual">
+    <div class="card" style="border:1.5px solid var(--brand)">
+      <div class="sec-title">👥 Bulk Correction — many staff at once</div>
+      <p style="font-size:12px;color:var(--text3);margin-bottom:12px">Select staff, choose a date range, and fix them all together. Nothing changes until you review the preview and confirm.</p>
+      <div style="margin-bottom:10px">
+        <label class="il">1. Staff <span style="color:var(--text3);font-weight:400">(tap to select)</span></label>
+        <div style="display:flex;gap:6px;margin:6px 0">
+          <button class="btn btn-outline" onclick="bulkSelectAll(true)" style="padding:5px 10px;font-size:11px;width:auto">Select all</button>
+          <button class="btn btn-outline" onclick="bulkSelectAll(false)" style="padding:5px 10px;font-size:11px;width:auto">Clear</button>
+        </div>
+        <div id="bulkStaffList" style="max-height:190px;overflow-y:auto;border:1px solid var(--blush3);border-radius:10px;padding:8px;background:var(--surface2)"></div>
+      </div>
+      <div class="ig-row">
+        <div class="ig"><label class="il">2. From date</label><input type="date" class="if" id="bulkFrom"></div>
+        <div class="ig"><label class="il">To date</label><input type="date" class="if" id="bulkTo"></div>
+      </div>
+      <div class="ig">
+        <label class="il">3. Only change days that are currently</label>
+        <select class="if" id="bulkFilter">
+          <option value="">Any status</option>
+          <option value="Half Day">Half Day</option>
+          <option value="Late">Late</option>
+          <option value="Early Out">Early Out</option>
+          <option value="Absent">Absent</option>
+          <option value="Overtime">Overtime</option>
+          <option value="Present">Present</option>
+        </select>
+      </div>
+      <div class="ig">
+        <label class="il">4. What to do</label>
+        <select class="if" id="bulkAction" onchange="toggleBulkFields()">
+          <option value="status">Set a new status</option>
+          <option value="times">Set IN &amp; OUT times (status auto-calculated)</option>
+        </select>
+      </div>
+      <div class="ig" id="bulkStatusRow">
+        <label class="il">New status</label>
+        <select class="if" id="bulkStatus">
+          <option value="Present">Present</option>
+          <option value="Late">Late</option>
+          <option value="Half Day">Half Day</option>
+          <option value="Early Out">Early Out</option>
+          <option value="Overtime">Overtime</option>
+          <option value="Absent">Absent</option>
+          <option value="Leave">Leave</option>
+        </select>
+      </div>
+      <div class="ig-row" id="bulkTimeRow" style="display:none">
+        <div class="ig"><label class="il">IN time</label><input type="time" class="if" id="bulkIn"></div>
+        <div class="ig"><label class="il">OUT time</label><input type="time" class="if" id="bulkOut"></div>
+      </div>
+      <div class="ig"><label class="il">Reason / note (optional)</label><input type="text" class="if" id="bulkReason" placeholder="e.g. exhibition duty"></div>
+      <button class="btn btn-outline" onclick="bulkPreview()" style="width:100%">🔍 Preview changes</button>
+      <div id="bulkOut2" style="margin-top:12px"></div>
+    </div>
+
     <div class="card">
       <div class="sec-title">✏️ Manual Attendance Entry</div>
       <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Kisi bhi staff ka attendance manually set karo.</p>
@@ -2743,6 +2798,110 @@ async function repairPunchData(){
     showToast('❌ Repair failed: '+e.message,5000);
   }
 }
+// ══════════════════════════════════════════════
+// BULK CORRECTION — fix many staff / many days at once
+// ══════════════════════════════════════════════
+let _bulkPlan=null;
+function renderBulkStaffList(){
+  const el=document.getElementById('bulkStaffList');
+  if(!el)return;
+  const staff=getStaff();
+  if(!staff.length){el.innerHTML='<div style="font-size:12px;color:var(--text3)">No staff added yet</div>';return;}
+  el.innerHTML=staff.map(s=>
+    '<label style="display:flex;align-items:center;gap:9px;padding:6px 4px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--blush2)">'+
+      '<input type="checkbox" class="bulkChk" value="'+s.id+'" style="width:17px;height:17px;flex-shrink:0">'+
+      '<span>'+escHtml(s.name)+(s.role?' <span style="color:var(--text3);font-size:11px">'+escHtml(s.role)+'</span>':'')+'</span>'+
+    '</label>').join('');
+}
+function bulkSelectAll(on){
+  document.querySelectorAll('.bulkChk').forEach(c=>{c.checked=on;});
+}
+function toggleBulkFields(){
+  const a=document.getElementById('bulkAction').value;
+  document.getElementById('bulkStatusRow').style.display=(a==='status')?'block':'none';
+  document.getElementById('bulkTimeRow').style.display=(a==='times')?'grid':'none';
+}
+function bulkPreview(){
+  const out=document.getElementById('bulkOut2');
+  const ids=Array.from(document.querySelectorAll('.bulkChk')).filter(c=>c.checked).map(c=>c.value);
+  const from=document.getElementById('bulkFrom').value,to=document.getElementById('bulkTo').value;
+  const filter=document.getElementById('bulkFilter').value;
+  const action=document.getElementById('bulkAction').value;
+  const newStatus=document.getElementById('bulkStatus').value;
+  const inT=document.getElementById('bulkIn').value,outT=document.getElementById('bulkOut').value;
+  const reason=document.getElementById('bulkReason').value.trim();
+  if(!ids.length){out.innerHTML='<div style="color:var(--red);font-size:12.5px">Please select at least one staff member.</div>';return;}
+  if(!from||!to){out.innerHTML='<div style="color:var(--red);font-size:12.5px">Please choose both dates.</div>';return;}
+  if(from>to){out.innerHTML='<div style="color:var(--red);font-size:12.5px">"From" date must be before "To" date.</div>';return;}
+  if(action==='times'&&!inT){out.innerHTML='<div style="color:var(--red);font-size:12.5px">Please enter an IN time.</div>';return;}
+  const staffMap={};getStaff().forEach(s=>{staffMap[s.id]=s;});
+  const settings=getSettings();
+  const att=getAtt();
+  const dates=getDatesInRange(from,to);
+  const plan=[];
+  ids.forEach(id=>{
+    const staff=staffMap[id];if(!staff)return;
+    dates.forEach(d=>{
+      if(isWeekOff(new Date(d+'T00:00:00'))||isHoliday(d))return;   // never touch off-days
+      const rec=att.find(a=>a.staffId===id&&a.date===d);
+      const cur=rec?rec.status:'(no record)';
+      if(filter&&cur!==filter)return;
+      let toStatus=newStatus,newIn=rec?rec.inTime:'',newOut=rec?rec.outTime:'';
+      if(action==='times'){
+        newIn=inT;newOut=outT||'';
+        if(outT){
+          const hrs=timeDiffHours(inT,outT);
+          const earlyMin=timeDiffMin(outT,staff.shiftOut||'18:00');
+          toStatus=classifyOutStatus(staff,hrs,earlyMin,outT).status;
+          if(toStatus==='Present'&&timeDiffMin(staff.shiftIn||'09:00',inT)>settings.grace)toStatus='Late';
+        }else{
+          toStatus=(timeDiffMin(staff.shiftIn||'09:00',inT)>settings.grace)?'Late':'Present';
+        }
+      }
+      if(cur===toStatus&&action==='status'&&!reason)return;   // nothing would change
+      plan.push({staffId:id,staffName:staff.name,date:d,from:cur,to:toStatus,newIn,newOut,reason});
+    });
+  });
+  if(!plan.length){out.innerHTML='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">Nothing matches those settings — no changes needed.</div>';_bulkPlan=null;return;}
+  _bulkPlan=plan;
+  const rows=plan.slice(0,30).map(p=>
+    '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--blush2)">'+
+      '<span>'+escHtml(p.staffName)+' · '+escHtml(p.date)+'</span>'+
+      '<span style="white-space:nowrap"><span style="color:var(--red)">'+escHtml(p.from)+'</span> → <span style="color:var(--green);font-weight:700">'+escHtml(p.to)+'</span>'+(p.newIn?' <span style="color:var(--text3)">'+escHtml(p.newIn)+(p.newOut?'-'+escHtml(p.newOut):'')+'</span>':'')+'</span>'+
+    '</div>').join('');
+  out.innerHTML='<div style="background:var(--orange-bg);color:var(--orange);padding:10px;border-radius:9px;font-size:12.5px;margin-bottom:9px"><b>'+plan.length+'</b> record(s) will change. Please review before applying.</div>'+
+    rows+(plan.length>30?'<div style="font-size:11px;color:var(--text3);padding:6px 0">…and '+(plan.length-30)+' more</div>':'')+
+    '<button class="btn btn-primary" style="margin-top:11px;width:100%" onclick="bulkApply()">✅ Apply these '+plan.length+' changes</button>';
+}
+function bulkApply(){
+  if(!_bulkPlan||!_bulkPlan.length){showToast('Run Preview first');return;}
+  const staffMap={};getStaff().forEach(s=>{staffMap[s.id]=s;});
+  const att=getAtt();
+  let n=0;
+  _bulkPlan.forEach(p=>{
+    let rec=att.find(a=>a.staffId===p.staffId&&a.date===p.date);
+    if(!rec){
+      rec={staffId:p.staffId,staffName:p.staffName,date:p.date,inTime:'',outTime:'',status:p.to,method:'manual',hours:0,reason:'',absentReason:''};
+      att.push(rec);
+    }
+    rec.status=p.to;
+    if(p.newIn){rec.inTime=p.newIn;rec.outTime=p.newOut||'';}
+    if(p.to==='Absent'&&!p.newIn){rec.inTime='';rec.outTime='';}
+    if(rec.inTime&&rec.outTime)rec.hours=timeDiffHours(rec.inTime,rec.outTime);else rec.hours=0;
+    if(p.reason){if(p.to==='Absent')rec.absentReason=p.reason;else rec.reason=p.reason;}
+    rec.method='manual';
+    n++;
+  });
+  if(!setAtt(att)){showToast('❌ Save failed — try Optimize Storage first',5000);return;}
+  _bulkPlan.forEach(p=>{
+    const rec=getAtt().find(a=>a.staffId===p.staffId&&a.date===p.date);
+    if(rec){try{syncRecord(rec);}catch(e){}}
+  });
+  _bulkPlan=null;
+  renderTodayLog();updateDashStats();
+  document.getElementById('bulkOut2').innerHTML='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">✅ '+n+' record(s) updated. Generate the report again to see them.</div>';
+  showToast('✅ '+n+' records corrected',5000);
+}
 let _recalcPlan=null;
 function recalcAllStatuses(preview){
   const out=document.getElementById('recalcOut');
@@ -3655,7 +3814,7 @@ function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>
 function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(id==='punchPage'){document.querySelector('.nav-btn').classList.add('active');const ov=document.getElementById('scanOverlay');if(ov&&!mainStream)ov.classList.remove('hidden');}}
 function goAdmin(){curPin='';document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));document.getElementById('pinError').textContent='';document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('adminLoginPage').classList.add('active');}
 function adminLogout(){showPage('punchPage');}
-function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){populateManStaff();const md=document.getElementById('manDate');if(md&&!md.value)md.value=toKey(new Date());}}
+function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){populateManStaff();const md=document.getElementById('manDate');if(md&&!md.value)md.value=toKey(new Date());renderBulkStaffList();const bf=document.getElementById('bulkFrom'),bt=document.getElementById('bulkTo');if(bf&&!bf.value){const d=new Date();d.setDate(1);bf.value=toKey(d);}if(bt&&!bt.value)bt.value=toKey(new Date());toggleBulkFields();}}
 
 // PIN
 function pk(k){if(curPin.length>=4)return;curPin+=k;document.getElementById('d'+(curPin.length-1)).classList.add('filled');if(curPin.length===4)checkPin();}
