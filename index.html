@@ -1871,20 +1871,40 @@ function mergeAttRecords(base,incoming){
 async function syncTodayFromServer(staffId){
   // Pull just today's row for this one staff member — small and fast.
   const today=toKey(new Date());
+  let serverRecs=null;
+  // 1st choice: the permanent archive (only present if attendance-archive-router is installed)
   try{
     const ctrl=new AbortController();
     const timer=setTimeout(()=>ctrl.abort(),2500); // never let a slow network block a punch
     const res=await fetch('/api/attendance-archive?bucket='+TOOL_ID+'&from='+today+'&to='+today+'&staffId='+encodeURIComponent(staffId),{signal:ctrl.signal});
     clearTimeout(timer);
-    if(!res.ok)return false;
-    const j=await res.json();
-    if(!j.ok||!j.records||!j.records.length)return false;
+    if(res.ok){
+      const j=await res.json();
+      if(j&&j.ok&&j.records)serverRecs=j.records;
+    }
+  }catch(e){/* fall through to the backup route */}
+  // Fallback: the main cloud copy, which every server has
+  if(serverRecs===null){
+    try{
+      const ctrl2=new AbortController();
+      const timer2=setTimeout(()=>ctrl2.abort(),2500);
+      const res2=await fetch('/api/restore?bucket='+TOOL_ID,{signal:ctrl2.signal});
+      clearTimeout(timer2);
+      if(res2.ok){
+        const j2=await res2.json();
+        const cloudAtt=(j2&&j2.ok&&j2.data&&j2.data.att)?j2.data.att:[];
+        serverRecs=cloudAtt.filter(r=>r&&String(r.staffId)===String(staffId)&&r.date===today);
+      }
+    }catch(e){return false;} // offline / timeout — carry on with local data as before
+  }
+  if(!serverRecs||!serverRecs.length)return false;
+  try{
     const before=JSON.stringify(getAtt().find(a=>a.staffId===staffId&&a.date===today)||null);
-    const merged=mergeAttRecords(getAtt(),j.records);
+    const merged=mergeAttRecords(getAtt(),serverRecs);
     const after=JSON.stringify(merged.find(a=>a.staffId===staffId&&a.date===today)||null);
     if(before!==after){setAtt(merged);return true;}
-    return false;
-  }catch(e){return false;} // offline / timeout — carry on with local data as before
+  }catch(e){}
+  return false;
 }
 async function handlePunch(staff,photo){
   // Another device may already hold today's punch for this person. Pull it in
@@ -2623,13 +2643,25 @@ async function punchHealthCheck(){
   const to=toKey(new Date());
   const fromD=new Date();fromD.setDate(fromD.getDate()-13);
   const from=toKey(fromD);
-  let serverRecs=[];
+  let serverRecs=null,usedFallback=false;
+  // Try the permanent archive first
   try{
     const res=await fetch('/api/attendance-archive?bucket='+TOOL_ID+'&from='+from+'&to='+to);
-    const j=await res.json();
-    if(!j.ok)throw new Error(j.error||'Server error');
-    serverRecs=j.records||[];
-  }catch(e){
+    if(res.ok){const j=await res.json();if(j&&j.ok)serverRecs=j.records||[];}
+  }catch(e){}
+  // Fall back to the main cloud copy if the archive isn't installed on this server
+  if(serverRecs===null){
+    try{
+      const res2=await fetch('/api/restore?bucket='+TOOL_ID);
+      if(res2.ok){
+        const j2=await res2.json();
+        const cloudAtt=(j2&&j2.ok&&j2.data&&j2.data.att)?j2.data.att:[];
+        serverRecs=cloudAtt.filter(r=>r&&r.date>=from&&r.date<=to);
+        usedFallback=true;
+      }
+    }catch(e){}
+  }
+  if(serverRecs===null){
     out.innerHTML='<div style="background:var(--red-bg);color:var(--red);padding:10px;border-radius:9px;font-size:12.5px">❌ Could not reach the server. Check internet and try again.</div>';
     return;
   }
@@ -2650,6 +2682,7 @@ async function punchHealthCheck(){
   const nm=r=>escHtml(staffMap[r.staffId]||r.staffName||r.staffId);
   const line=(r,note,color)=>'<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--blush2)"><span>'+nm(r)+' · '+escHtml(r.date)+'</span><span style="color:'+color+';white-space:nowrap">'+note+'</span></div>';
   let html='<div style="font-size:12px;color:var(--text2);margin-bottom:9px">Last 14 days · '+localRecs.length+' on this device · '+serverRecs.length+' on server</div>';
+  if(usedFallback)html+='<div style="background:var(--orange-bg);color:var(--orange);padding:8px 10px;border-radius:9px;font-size:11.5px;margin-bottom:9px">ℹ️ Permanent archive is not installed on the server — using the main cloud backup instead. Ask your developer to deploy <b>attendance-archive-router.js</b> for full protection.</div>';
   if(!onlyLocal.length&&!onlyServer.length&&!differ.length){
     html+='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">✅ This device and the server match perfectly. No punches are missing.</div>';
   }else{
@@ -2676,13 +2709,23 @@ async function repairPunchData(){
   const fromD=new Date();fromD.setDate(fromD.getDate()-13);
   const from=toKey(fromD);
   try{
-    const res=await fetch('/api/attendance-archive?bucket='+TOOL_ID+'&from='+from+'&to='+to);
-    const j=await res.json();
-    const serverRecs=(j&&j.ok&&j.records)?j.records:[];
+    let serverRecs=null;
+    try{
+      const res=await fetch('/api/attendance-archive?bucket='+TOOL_ID+'&from='+from+'&to='+to);
+      if(res.ok){const j=await res.json();if(j&&j.ok)serverRecs=j.records||[];}
+    }catch(e){}
+    if(serverRecs===null){
+      const res2=await fetch('/api/restore?bucket='+TOOL_ID);
+      const j2=await res2.json();
+      const cloudAtt=(j2&&j2.ok&&j2.data&&j2.data.att)?j2.data.att:[];
+      serverRecs=cloudAtt.filter(r=>r&&r.date>=from&&r.date<=to);
+    }
     // Keep the more complete version of every record, both ways
     const merged=mergeAttRecords(getAtt(),serverRecs);
     setAtt(merged);
-    // Push everything back so the server also has whatever only this device had
+    // Push everything back so the server also has whatever only this device had.
+    // setAtt already triggers a merge-and-push of the full array; also feed the
+    // archive when it exists so the permanent copy stays complete too.
     const mine=merged.filter(r=>r.date>=from&&r.date<=to&&(r.inTime||r.outTime));
     for(let i=0;i<mine.length;i+=200){
       await fetch('/api/attendance-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,records:mine.slice(i,i+200)})}).catch(()=>{});
