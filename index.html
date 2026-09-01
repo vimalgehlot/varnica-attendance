@@ -3900,22 +3900,27 @@ function saveManEntry(){
   if(type==='late_in'){rec.status='Late';rec.reason=reason;if(inT)rec.inTime=inT;}
   else if(type==='early_out'){rec.reason=reason;if(outT)rec.outTime=outT;}
   else if(type==='absent'){rec.status='Absent';rec.absentReason=reason;rec.inTime='';rec.outTime='';}
-  else if(type==='regular'){
-    // Face-punch jaisa hi logic: shift timing + hours ke hisaab se status auto-set
-    rec.inTime=inT;rec.outTime=outT||'';rec.reason=reason||'';rec.absentReason='';
-    const shiftIn=staff.shiftIn||'09:00',shiftOut=staff.shiftOut||'18:00';
-    const lateMin=timeDiffMin(shiftIn,inT);
-    let status=(lateMin>settings.grace)?'Late':'Present';
-    if(outT){
-      const hrs=timeDiffHours(inT,outT);
-      if(hrs<settings.halfDay)status='Half Day';
-      else if(timeDiffMin(shiftOut,outT)>30)status='Overtime';
-    }
-    rec.status=status;
-  }
+  else if(type==='regular'){rec.inTime=inT;rec.outTime=outT||'';rec.reason=reason||'';rec.absentReason='';}
   else{rec.status=sm[type];rec.reason=reason;}
   if(inT&&!rec.inTime)rec.inTime=inT;if(outT)rec.outTime=outT;
   if(rec.inTime&&rec.outTime)rec.hours=timeDiffHours(rec.inTime,rec.outTime);
+  // Recalculate the status from the FINAL times, using exactly the same rule as a
+  // real face punch. Without this, fixing the times left a wrong status behind
+  // (e.g. 10 hours of work still showing as Half Day).
+  // Absent / Leave / Half Day are admin decisions, so those are left as chosen.
+  if(type==='regular'||type==='late_in'||type==='early_out'){
+    const shiftIn=staff.shiftIn||'09:00',shiftOut=staff.shiftOut||'18:00';
+    if(rec.inTime&&rec.outTime){
+      const earlyMin=timeDiffMin(rec.outTime,shiftOut);
+      const cls=classifyOutStatus(staff,rec.hours,earlyMin,rec.outTime);
+      let st=cls.status;
+      // Arriving after the grace period still counts as Late on an otherwise normal day
+      if(st==='Present'&&timeDiffMin(shiftIn,rec.inTime)>settings.grace)st='Late';
+      rec.status=st;
+    }else if(rec.inTime){
+      rec.status=(timeDiffMin(shiftIn,rec.inTime)>settings.grace)?'Late':'Present';
+    }
+  }
   rec.method='manual';setAtt(att);syncRecord(rec);renderTodayLog();updateDashStats();
   showToast('✅ '+staff.name+' ka record save! ('+rec.status+')');loadManRec();
 }
