@@ -780,6 +780,12 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     </div>
     <div id="settingsFullOnly">
     <div class="card">
+      <div class="sec-title">🔄 Recalculate Attendance Statuses</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">Older records kept the status they were saved with, so some may be wrong (e.g. a full day showing as Half Day). This rechecks every record against each staff member's own shift hours. Nothing changes until you confirm.</div>
+      <button class="btn btn-outline" onclick="recalcAllStatuses(true)" style="width:100%">🔍 Check All Records</button>
+      <div id="recalcOut" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
       <div class="sec-title">🩺 Punch Data Health Check</div>
       <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">Compares this device's punches with the server for the last 14 days. Use this whenever a staff member says a punch is missing.</div>
       <button class="btn btn-outline" onclick="punchHealthCheck()" style="width:100%">🔍 Check Device vs Server</button>
@@ -2736,6 +2742,58 @@ async function repairPunchData(){
   }catch(e){
     showToast('❌ Repair failed: '+e.message,5000);
   }
+}
+let _recalcPlan=null;
+function recalcAllStatuses(preview){
+  const out=document.getElementById('recalcOut');
+  if(!out)return;
+  const staffMap={};getStaff().forEach(s=>{staffMap[s.id]=s;});
+  const settings=getSettings();
+  const att=getAtt();
+  const changes=[];
+  att.forEach(r=>{
+    if(!r||!r.inTime||!r.outTime)return;          // no punch pair — nothing to recompute
+    if(r.status==='Leave')return;                  // admin decision, leave it alone
+    const staff=staffMap[r.staffId];
+    if(!staff)return;
+    const shiftIn=staff.shiftIn||'09:00',shiftOut=staff.shiftOut||'18:00';
+    const hrs=(typeof r.hours==='number'&&r.hours>0)?r.hours:timeDiffHours(r.inTime,r.outTime);
+    const earlyMin=timeDiffMin(r.outTime,shiftOut);
+    let st=classifyOutStatus(staff,hrs,earlyMin,r.outTime).status;
+    if(st==='Present'&&timeDiffMin(shiftIn,r.inTime)>settings.grace)st='Late';
+    if(st!==r.status)changes.push({r,staffName:staff.name,from:r.status,to:st,hrs});
+  });
+  if(!changes.length){
+    out.innerHTML='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">✅ All statuses already match the current rule. Nothing to change.</div>';
+    _recalcPlan=null;return;
+  }
+  if(preview){
+    _recalcPlan=changes;
+    const rows=changes.slice(0,25).map(c=>
+      '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--blush2)">'+
+        '<span>'+escHtml(c.staffName)+' · '+escHtml(c.r.date)+'</span>'+
+        '<span style="white-space:nowrap"><span style="color:var(--red)">'+escHtml(c.from)+'</span> → <span style="color:var(--green);font-weight:700">'+escHtml(c.to)+'</span> <span style="color:var(--text3)">('+c.hrs.toFixed(1)+'h)</span></span>'+
+      '</div>').join('');
+    out.innerHTML='<div style="background:var(--orange-bg);color:var(--orange);padding:10px;border-radius:9px;font-size:12.5px;margin-bottom:9px">Found <b>'+changes.length+'</b> record(s) whose status does not match the current rule.</div>'+
+      rows+(changes.length>25?'<div style="font-size:11px;color:var(--text3);padding:6px 0">…and '+(changes.length-25)+' more</div>':'')+
+      '<button class="btn btn-primary" style="margin-top:11px;width:100%" onclick="applyRecalc()">✅ Apply these '+changes.length+' corrections</button>';
+  }
+}
+function applyRecalc(){
+  if(!_recalcPlan||!_recalcPlan.length){showToast('Run the check first');return;}
+  const att=getAtt();
+  let n=0;
+  _recalcPlan.forEach(c=>{
+    const rec=att.find(a=>a.staffId===c.r.staffId&&a.date===c.r.date);
+    if(rec){rec.status=c.to;n++;}
+  });
+  if(!setAtt(att)){showToast('❌ Save failed — try Optimize Storage first',5000);return;}
+  // Push the corrected records to the server too
+  att.filter(a=>_recalcPlan.some(c=>c.r.staffId===a.staffId&&c.r.date===a.date)).forEach(r=>{try{syncRecord(r);}catch(e){}});
+  _recalcPlan=null;
+  renderTodayLog();updateDashStats();
+  showToast('✅ '+n+' status(es) corrected. Generate the report again to see them.',6000);
+  setTimeout(()=>recalcAllStatuses(true),700);
 }
 function faceHealthCheck(){
   const staff=getStaff().filter(s=>s.descriptors&&s.descriptors.length);
