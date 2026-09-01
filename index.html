@@ -2587,7 +2587,7 @@ function generateReport(){
         return;
       }
       workDays++;
-      if(!rec||!rec.inTime){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
+      if(!recIsAttended(rec)){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
       else{
         if(rec.status==='Late')late++;
         if(rec.status==='Half Day')halfDay++;
@@ -2643,7 +2643,7 @@ function buildDayWiseData(dates,targetStaff,att){
         if(rec&&rec.inTime)return{staff:s,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
         return{staff:s,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''};
       }
-      if(!rec||!rec.inTime)return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false};
+      if(!recIsAttended(rec))return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false};
       return{staff:s,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
     });
     let present=0,absent=0,late=0,halfDay=0,earlyOut=0,overtime=0,extraDays=0;
@@ -3998,7 +3998,7 @@ function findPendingReasonDay(staff){
     if(key>=todayKey)continue;
     if(isWeekOff(d)||isHoliday(key))continue;
     const rec=att.find(a=>a.staffId===staff.id&&a.date===key);
-    if(!rec||!rec.inTime){
+    if(!recIsAttended(rec)){
       // Never punched that day. Only ask if it hasn't already been answered.
       if(rec&&(rec.absentReason||rec.reason))continue;
       return{date:key,status:'Absent'};
@@ -4011,6 +4011,16 @@ function findPendingReasonDay(staff){
 // Bands are % of the staff member's OWN shift length. Tune here if the rule changes.
 const HALFDAY_MIN_PCT=0.50;   // below this = not enough work to count at all -> Absent
 const FULLDAY_MIN_PCT=0.90;   // at or above this = counts as a full day
+function recIsAttended(rec){
+  // A punch counts, and so does a status the admin set by hand on a day with no punch.
+  // Without this second case, changing a cell from Absent to Present in the matrix
+  // had no effect on the report, because the report only looked at inTime.
+  // The list is kept inside the function on purpose: a top-level const is not hoisted,
+  // so it would throw if this ever ran during initial page evaluation.
+  if(!rec)return false;
+  if(rec.inTime)return true;
+  return ['Present','Late','Half Day','Early Out','Overtime'].indexOf(rec.status)>=0;
+}
 function classifyOutStatus(staff,hrs,earlyMin,timeStr){
   // Single place that decides the OUT-punch status, used by every path so
   // the punch screen, the reason popup and manual entry can never disagree.
