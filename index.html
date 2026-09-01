@@ -780,6 +780,12 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     </div>
     <div id="settingsFullOnly">
     <div class="card">
+      <div class="sec-title">🩺 Punch Data Health Check</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">Compares this device's punches with the server for the last 14 days. Use this whenever a staff member says a punch is missing.</div>
+      <button class="btn btn-outline" onclick="punchHealthCheck()" style="width:100%">🔍 Check Device vs Server</button>
+      <div id="punchHealthOut" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
       <div class="sec-title">🧬 Face Data Health Check</div>
       <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">If two staff have very similar face data, the camera can punch the wrong person. Run this to find such pairs.</div>
       <button class="btn btn-outline" onclick="faceHealthCheck()" style="width:100%">🔍 Check All Staff Faces</button>
@@ -1170,8 +1176,23 @@ const cloudBackupTimers={};
 function cloudBackupSync(key,value){
   // Per-key debounce — different keys must NOT cancel each other (was causing attendance loss)
   clearTimeout(cloudBackupTimers[key]);
-  cloudBackupTimers[key]=setTimeout(()=>{
-    fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,key,value})})
+  cloudBackupTimers[key]=setTimeout(async()=>{
+    let payload=value;
+    if(key==='att'){
+      // MERGE before pushing. A straight overwrite let a device with stale data
+      // erase punches made on another device (e.g. morning IN on the iPad).
+      try{
+        const res=await fetch('/api/restore?bucket='+TOOL_ID);
+        const json=await res.json();
+        const cloudAtt=(json&&json.ok&&json.data&&json.data.att)?json.data.att:null;
+        if(Array.isArray(cloudAtt)&&cloudAtt.length){
+          payload=mergeAttRecords(cloudAtt,value);
+          // Keep this device in step with the merged truth
+          try{if(JSON.stringify(payload)!==JSON.stringify(value))DB.set('att',payload);}catch(e){}
+        }
+      }catch(e){/* offline — push local copy, the archive still holds everything */}
+    }
+    fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,key,value:payload})})
       .then(r=>{document.getElementById('cloudBackupDot')&&(document.getElementById('cloudBackupDot').style.background=r.ok?'var(--green)':'var(--red)');})
       .catch(()=>{document.getElementById('cloudBackupDot')&&(document.getElementById('cloudBackupDot').style.background='var(--red)');});
   },800);
@@ -1236,18 +1257,9 @@ async function pullCloudData(){
     if(d.settings)localStorage.setItem('vj_settings',JSON.stringify(d.settings));
     // Attendance: merge (don't lose today's not-yet-synced local punches if cloud is slightly behind)
     if(d.att){
-      const localAtt=getAtt();
-      const merged=[...d.att];
-      localAtt.forEach(la=>{
-        const idx=merged.findIndex(ca=>ca.staffId===la.staffId&&ca.date===la.date);
-        if(idx===-1)merged.push(la);
-        else{
-          const ca=merged[idx];
-          const laScore=(la.outTime?2:0)+(la.inTime?1:0);
-          const caScore=(ca.outTime?2:0)+(ca.inTime?1:0);
-          if(laScore>caScore)merged[idx]=la;
-        }
-      });
+      // Field-aware merge — the old version threw away the local copy whenever the
+      // scores tied, which silently lost reasons and locally-made punches.
+      const merged=mergeAttRecords(d.att,getAtt());
       localStorage.setItem('vj_att',JSON.stringify(merged));
     }
   }catch(e){ /* offline or backend unreachable — silently continue with whatever is local */ }
@@ -1842,28 +1854,76 @@ function capturePunchThumbnail(){
     return c.toDataURL('image/jpeg',0.82);
   }catch(e){return null;}
 }
+function mergeAttRecords(base,incoming){
+  // Merge two attendance arrays, keeping the MORE COMPLETE record for each staff+date.
+  // Used both when pulling from the server and before pushing, so one device can
+  // never wipe out a punch that was made on another device.
+  const score=r=>(r&&r.outTime?2:0)+(r&&r.inTime?1:0)+(r&&(r.reason||r.absentReason||r.earlyOutReason)?1:0);
+  const out=base.slice();
+  (incoming||[]).forEach(inc=>{
+    if(!inc||!inc.staffId||!inc.date)return;
+    const idx=out.findIndex(o=>o.staffId===inc.staffId&&o.date===inc.date);
+    if(idx===-1){out.push(inc);return;}
+    if(score(inc)>score(out[idx]))out[idx]={...out[idx],...inc};
+  });
+  return out;
+}
+async function syncTodayFromServer(staffId){
+  // Pull just today's row for this one staff member — small and fast.
+  const today=toKey(new Date());
+  try{
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),2500); // never let a slow network block a punch
+    const res=await fetch('/api/attendance-archive?bucket='+TOOL_ID+'&from='+today+'&to='+today+'&staffId='+encodeURIComponent(staffId),{signal:ctrl.signal});
+    clearTimeout(timer);
+    if(!res.ok)return false;
+    const j=await res.json();
+    if(!j.ok||!j.records||!j.records.length)return false;
+    const before=JSON.stringify(getAtt().find(a=>a.staffId===staffId&&a.date===today)||null);
+    const merged=mergeAttRecords(getAtt(),j.records);
+    const after=JSON.stringify(merged.find(a=>a.staffId===staffId&&a.date===today)||null);
+    if(before!==after){setAtt(merged);return true;}
+    return false;
+  }catch(e){return false;} // offline / timeout — carry on with local data as before
+}
 async function handlePunch(staff,photo){
-  // Look back over the last 7 days for ANY day where a reason is still missing —
-  // absent, late, early out or half day. The oldest one is asked for first, so a
-  // staff member cannot keep punching while leaving earlier days unexplained.
+  // Another device may already hold today's punch for this person. Pull it in
+  // first, otherwise this device would create a duplicate (Late) IN.
+  if(navigator.onLine)await syncTodayFromServer(staff.id);
+  // Look back over the last 7 days for a day where a reason is still missing.
   const pending=findPendingReasonDay(staff);
-  if(pending){
-    pendingAbsentId=staff.id;
-    pendingReasonDate=pending.date;
-    document.getElementById('absentStaffName').textContent=staff.name;
+  // ── Record the punch FIRST, always. ──
+  // It must never depend on a popup being completed: if the person walks away,
+  // the page reloads, or the popup is closed, the punch would otherwise be lost
+  // and the next scan would wrongly create a fresh (Late) IN.
+  doPunch(staff,photo);
+  if(!pending)return;
+  // Now ask about the older unexplained day, but wait until the punch's own
+  // popups (welcome / late-reason) have finished so they don't fight each other.
+  pendingAbsentId=staff.id;
+  pendingReasonDate=pending.date;
+  let tries=0;
+  const askPending=()=>{
+    if(pendingAbsentId!==staff.id)return;               // something else took over
+    if(document.querySelector('.popup-ov.active')){      // a popup is still open
+      if(++tries<25){setTimeout(askPending,1200);return;}
+      return;                                            // give up quietly; asked again next punch
+    }
+    const nameEl=document.getElementById('absentStaffName');
+    if(!nameEl)return;
+    nameEl.textContent=staff.name;
     const absPhotoEl=document.getElementById('absentStaffPhoto');
     if(staff.photo){absPhotoEl.src=staff.photo;absPhotoEl.style.display='inline-block';}else{absPhotoEl.style.display='none';}
     document.getElementById('absentMsg').textContent=pending.status==='Absent'
       ? 'You were absent on '+fmtDateLabel(pending.date)+'. Please provide a reason.'
       : 'Your '+pending.status+' on '+fmtDateLabel(pending.date)+' has no reason yet. Please provide a reason.';
     document.getElementById('absentReason').value='';document.getElementById('absentReqMsg').style.display='none';
-    pendingPunchData={staff,photo};openPopup('absentPopup');
+    openPopup('absentPopup');
     const absSkipBtn=document.getElementById('absentSkipBtn');
     if(absSkipBtn)absSkipBtn.style.display=(getSettings().reasonCompulsory===false)?'block':'none';
     setTimeout(()=>{const ta=document.getElementById('absentReason');if(ta)ta.focus();},500);
-    return;
-  }
-  doPunch(staff,photo);
+  };
+  setTimeout(askPending,1000);
 }
 
 function doPunch(staff,photo){
@@ -1883,8 +1943,12 @@ function doPunch(staff,photo){
     const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
     // Fire-and-forget VPS upload
     if(vpsPhotoEnabled&&photo)backgroundUploadPhoto(staff,todayKey,'in',photo);
+    // Always push to the server immediately — a Late punch used to be skipped here,
+    // so it lived only on this device until (and unless) a reason was submitted.
+    syncRecord(latest);
+    renderTodayLog();updateDashStats();
     if(warningType){pendingPunchData={staff,punchType:'IN',timeStr,warningType};showWarningPopup(staff,'IN',timeStr,warningType);}
-    else{syncRecord(latest);showWelcomePopup(staff,'IN',timeStr,latest);renderTodayLog();updateDashStats();}
+    else{showWelcomePopup(staff,'IN',timeStr,latest);}
   }else{
     const gapMin=timeDiffMin(rec.inTime,timeStr);
     if(gapMin<2){showToast('✅ You are already Punched IN ('+rec.inTime+'). Please wait at least 2 min before scanning for OUT.');resetStatusCard();return;}
@@ -2060,7 +2124,7 @@ function skipAbsentReason(){
   else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:targetDate,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:'(skipped)'});setAtt(att);}
   closePopup('absentPopup');
   syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,status:'Absent',absentReason:'(skipped)',hours:0});
-  if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff,pendingPunchData.photo);
+  // Punch was already recorded in handlePunch — do NOT punch again here.
   pendingAbsentId=null;pendingPunchData=null;pendingReasonDate=null;
 }
 function submitAbsentReason(){
@@ -2081,7 +2145,7 @@ function submitAbsentReason(){
   closePopup('absentPopup');
   const savedRec=getAtt().find(a=>a.staffId===pendingAbsentId&&a.date===targetDate);
   if(savedRec)syncRecord(savedRec);
-  if(pendingPunchData&&pendingPunchData.staff)doPunch(pendingPunchData.staff,pendingPunchData.photo);
+  // Punch was already recorded in handlePunch — do NOT punch again here.
   pendingAbsentId=null;pendingPunchData=null;pendingReasonDate=null;
 }
 
@@ -2550,6 +2614,84 @@ function toggleSalaryReveal(){
     showToast('👁️ Salary revealed for this session');
   }else{
     showToast('❌ Incorrect PIN');
+  }
+}
+async function punchHealthCheck(){
+  const out=document.getElementById('punchHealthOut');
+  if(!out)return;
+  out.innerHTML='<div style="font-size:12px;color:var(--text3)">Checking against server…</div>';
+  const to=toKey(new Date());
+  const fromD=new Date();fromD.setDate(fromD.getDate()-13);
+  const from=toKey(fromD);
+  let serverRecs=[];
+  try{
+    const res=await fetch('/api/attendance-archive?bucket='+TOOL_ID+'&from='+from+'&to='+to);
+    const j=await res.json();
+    if(!j.ok)throw new Error(j.error||'Server error');
+    serverRecs=j.records||[];
+  }catch(e){
+    out.innerHTML='<div style="background:var(--red-bg);color:var(--red);padding:10px;border-radius:9px;font-size:12.5px">❌ Could not reach the server. Check internet and try again.</div>';
+    return;
+  }
+  const staffMap={};getStaff().forEach(s=>{staffMap[s.id]=s.name;});
+  const localRecs=getAtt().filter(a=>a.date>=from&&a.date<=to);
+  const key=r=>r.staffId+'|'+r.date;
+  const L={},S={};
+  localRecs.forEach(r=>{L[key(r)]=r;});
+  serverRecs.forEach(r=>{S[key(r)]=r;});
+  const allKeys=Object.keys(Object.assign({},L,S));
+  const onlyLocal=[],onlyServer=[],differ=[];
+  allKeys.forEach(k=>{
+    const l=L[k],s=S[k];
+    if(l&&!s){if(l.inTime)onlyLocal.push(l);return;}
+    if(!l&&s){if(s.inTime)onlyServer.push(s);return;}
+    if((l.inTime||'')!==(s.inTime||'')||(l.outTime||'')!==(s.outTime||''))differ.push({l,s});
+  });
+  const nm=r=>escHtml(staffMap[r.staffId]||r.staffName||r.staffId);
+  const line=(r,note,color)=>'<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--blush2)"><span>'+nm(r)+' · '+escHtml(r.date)+'</span><span style="color:'+color+';white-space:nowrap">'+note+'</span></div>';
+  let html='<div style="font-size:12px;color:var(--text2);margin-bottom:9px">Last 14 days · '+localRecs.length+' on this device · '+serverRecs.length+' on server</div>';
+  if(!onlyLocal.length&&!onlyServer.length&&!differ.length){
+    html+='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">✅ This device and the server match perfectly. No punches are missing.</div>';
+  }else{
+    if(onlyLocal.length){
+      html+='<div style="background:var(--orange-bg);color:var(--orange);padding:9px;border-radius:9px;font-size:12px;margin-bottom:7px">⚠️ '+onlyLocal.length+' punch(es) exist only on THIS device — not yet on the server.</div>';
+      html+=onlyLocal.slice(0,12).map(r=>line(r,(r.inTime||'')+(r.outTime?' → '+r.outTime:''),'var(--orange)')).join('');
+    }
+    if(onlyServer.length){
+      html+='<div style="background:rgba(58,110,168,0.12);color:var(--blue);padding:9px;border-radius:9px;font-size:12px;margin:9px 0 7px">ℹ️ '+onlyServer.length+' punch(es) exist on the SERVER but not on this device (made on another device).</div>';
+      html+=onlyServer.slice(0,12).map(r=>line(r,(r.inTime||'')+(r.outTime?' → '+r.outTime:''),'var(--blue)')).join('');
+    }
+    if(differ.length){
+      html+='<div style="background:var(--red-bg);color:var(--red);padding:9px;border-radius:9px;font-size:12px;margin:9px 0 7px">❗ '+differ.length+' record(s) differ between device and server.</div>';
+      html+=differ.slice(0,12).map(d=>line(d.l,'device '+(d.l.inTime||'–')+'/'+(d.l.outTime||'–')+' · server '+(d.s.inTime||'–')+'/'+(d.s.outTime||'–'),'var(--red)')).join('');
+    }
+    html+='<button class="btn btn-primary" style="margin-top:11px;width:100%" onclick="repairPunchData()">🔧 Repair — merge both sides safely</button>';
+  }
+  out.innerHTML=html;
+}
+async function repairPunchData(){
+  const out=document.getElementById('punchHealthOut');
+  if(out)out.innerHTML='<div style="font-size:12px;color:var(--text3)">Repairing…</div>';
+  const to=toKey(new Date());
+  const fromD=new Date();fromD.setDate(fromD.getDate()-13);
+  const from=toKey(fromD);
+  try{
+    const res=await fetch('/api/attendance-archive?bucket='+TOOL_ID+'&from='+from+'&to='+to);
+    const j=await res.json();
+    const serverRecs=(j&&j.ok&&j.records)?j.records:[];
+    // Keep the more complete version of every record, both ways
+    const merged=mergeAttRecords(getAtt(),serverRecs);
+    setAtt(merged);
+    // Push everything back so the server also has whatever only this device had
+    const mine=merged.filter(r=>r.date>=from&&r.date<=to&&(r.inTime||r.outTime));
+    for(let i=0;i<mine.length;i+=200){
+      await fetch('/api/attendance-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,records:mine.slice(i,i+200)})}).catch(()=>{});
+    }
+    renderTodayLog();updateDashStats();
+    showToast('✅ Repaired. Device and server now hold the same records.',5000);
+    setTimeout(punchHealthCheck,600);
+  }catch(e){
+    showToast('❌ Repair failed: '+e.message,5000);
   }
 }
 function faceHealthCheck(){
