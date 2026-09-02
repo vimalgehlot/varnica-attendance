@@ -171,7 +171,8 @@ router.get('/me', (req, res) => {
       inTime: r.inTime || '',
       outTime: r.outTime || '',
       hours: r.hours || 0,
-      reason: r.reason || r.earlyOutReason || r.absentReason || ''
+      reason: r.reason || r.earlyOutReason || r.absentReason || '',
+      manual: r.manual === true
     }));
 
     const st = data.settings || {};
