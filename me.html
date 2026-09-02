@@ -191,6 +191,14 @@ function getDatesInRange(from,to){
   while(cur<=end){out.push(toKey(cur));cur=new Date(cur.getTime()+86400000);}
   return out;
 }
+function recIsAttended(rec){
+  // Must match the admin app exactly. A punch counts, and so does a status the
+  // admin set by hand on a day with no punch — otherwise the portal shows a day
+  // as Absent that the admin's report shows as Present.
+  if(!rec)return false;
+  if(rec.inTime)return true;
+  return ['Present','Late','Half Day','Early Out','Overtime'].indexOf(rec.status)>=0;
+}
 function computeSummary(staff,st,records,from,to){
   const recMap={};records.forEach(r=>{recMap[r.date]=r;});
   const dates=getDatesInRange(from,to);
@@ -219,7 +227,7 @@ function computeSummary(staff,st,records,from,to){
       return;
     }
     workDays++;
-    if(!rec||!rec.inTime){
+    if(!recIsAttended(rec)){
       absent++;
       rows.push({date:d,status:'Absent',inTime:'-',outTime:'-',reason:rec&&rec.reason?rec.reason:''});
     }else{
@@ -229,7 +237,7 @@ function computeSummary(staff,st,records,from,to){
       if(rec.status==='Early Out')earlyOut++;
       if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;
       grossEarned+=(rec.status==='Half Day')?rate*0.5:rate;
-      rows.push({date:d,status:rec.status||'Present',inTime:rec.inTime,outTime:rec.outTime||'-',reason:rec.reason||''});
+      rows.push({date:d,status:rec.status||'Present',inTime:rec.inTime,outTime:rec.outTime||'-',reason:rec.reason||'',manual:rec.manual===true});
     }
   });
   const totalPayingDays=present+halfDay*0.5+paidOffDays+extraDays;
@@ -365,7 +373,7 @@ function render(j,r){
 
   document.getElementById('dayRows').innerHTML=s.rows.slice().reverse().map(function(row){
     return '<tr><td class="mono">'+fmtDate(row.date)+'</td>'+
-      '<td style="color:'+statusColor(row.status)+';font-weight:600">'+row.status+
+      '<td style="color:'+statusColor(row.status)+';font-weight:600">'+row.status+(row.manual?' <span title="Adjusted by admin" style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#5C4220;vertical-align:super"></span>':'')+
       (row.reason?'<div class="rsn">'+String(row.reason).replace(/[<>&]/g,'')+'</div>':'')+'</td>'+
       '<td class="mono">'+(row.inTime||'-')+'</td>'+
       '<td class="mono">'+(row.outTime||'-')+'</td></tr>';
