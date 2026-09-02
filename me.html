@@ -179,9 +179,10 @@ function getDailyRate(staff,dateStr){
 function isWeekOff(date,st){return date.getDay()===parseInt(st.weekOff||0);}
 function isHoliday(ds,st){return (st.holidays||[]).some(h=>h.date===ds);}
 function isAbsentWorkDay(dateStr,recMap,st){
+  // Must match the admin app: a day the admin marked Present by hand has no punch
+  // time, and must NOT count as an absence for the sandwich rule.
   if(isWeekOff(new Date(dateStr+'T00:00:00'),st)||isHoliday(dateStr,st))return false;
-  const rec=recMap[dateStr];
-  return !rec||!rec.inTime;
+  return !recIsAttended(recMap[dateStr]);
 }
 function isSandwichedOff(dateStr,recMap,st){
   return isAbsentWorkDay(addDaysToKey(dateStr,-1),recMap,st)&&isAbsentWorkDay(addDaysToKey(dateStr,1),recMap,st);
