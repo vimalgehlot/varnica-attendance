@@ -2542,7 +2542,9 @@ function generateReport(){
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
       const dailyRate=getDailyRate(s,d);
       if(isWO||isHol){
-        const worked=!!(rec&&rec.inTime);
+        // Must use recIsAttended: a week-off the admin marked Present by hand has no
+        // punch time, and would otherwise be treated as an ordinary unworked off-day.
+        const worked=recIsAttended(rec);
         // Sandwich rule only forfeits the REST-DAY credit of an unworked off-day
         const sandwiched=!worked&&isSandwichedOff(s.id,d,att);
         if(sandwiched){
@@ -2607,7 +2609,7 @@ function computeQuickPct(staffId,dates,att){
     if(isWO||isHol)return;
     workDays++;
     const rec=att.find(a=>a.staffId===staffId&&a.date===d);
-    if(rec&&rec.inTime&&rec.status!=='Absent'&&rec.status!=='Half Day')present++;
+    if(recIsAttended(rec)&&rec.status!=='Absent'&&rec.status!=='Half Day')present++;
   });
   return workDays>0?Math.round(present/workDays*100):null;
 }
@@ -2617,7 +2619,7 @@ function buildDayWiseData(dates,targetStaff,att){
     const rows=targetStaff.map(s=>{
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
       if(isWO||isHol){
-        if(rec&&rec.inTime)return{staff:s,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
+        if(recIsAttended(rec))return{staff:s,status:'Extra Day',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
         return{staff:s,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''};
       }
       if(!recIsAttended(rec))return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false};
@@ -2851,9 +2853,14 @@ function renderEditMatrix(){
       const isOff=isWeekOff(new Date(d+'T00:00:00'))||isHoliday(d);
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
       const cur=rec?(rec.status||''):'';
-      const st=isOff&&!cur?{c:'#B89878',bg:'rgba(0,0,0,0.04)'}:mtxStyleFor(cur);
+      const workedOff=isOff&&recIsAttended(rec);
+      const st=isOff?(workedOff?{c:'#8B6A35',bg:'rgba(184,149,90,0.22)'}:{c:'#B89878',bg:'rgba(0,0,0,0.04)'}):mtxStyleFor(cur);
       const list=isOff?MTX_OFFDAY_STATUSES:MTX_STATUSES;
-      const opts=list.map(o=>'<option value="'+o.v+'"'+(o.v===cur?' selected':'')+'>'+o.l+'</option>').join('');
+      // On an off-day, show ✚ for the chosen status so it matches the report's symbol
+      const opts=list.map(o=>{
+        const lbl=(isOff&&o.v)?'✚':o.l;
+        return '<option value="'+o.v+'"'+(o.v===cur?' selected':'')+'>'+lbl+'</option>';
+      }).join('');
       const isManual=rec&&rec.manual===true;
       const tip=escHtml(s.name)+' · '+d+(rec&&rec.inTime?'  IN '+rec.inTime+(rec.outTime?' · OUT '+rec.outTime:''):'')+(isManual?'  (set by hand)':'');
       return '<td style="background:'+st.bg+';position:relative">'+(isManual?'<span class="mtx-dot" title="Set by hand"></span>':'')+
@@ -3749,7 +3756,7 @@ function renderTrendChart(){
     const d=new Date();d.setDate(d.getDate()-i);
     const key=toKey(d);
     const isOff=isWeekOff(d)||isHoliday(key);
-    const present=att.filter(a=>a.date===key&&a.inTime).length;
+    const present=att.filter(a=>a.date===key&&recIsAttended(a)).length;
     days.push({key,d,present,isOff,pct:staff.length?Math.round(present/staff.length*100):0});
   }
   const W=320,H=140,PL=26,PR=8,PT=12,PB=26;
@@ -3787,7 +3794,7 @@ function renderTodayDonut(){
   const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today);
   const late=att.filter(a=>a.status==='Late').length;
   const half=att.filter(a=>a.status==='Half Day').length;
-  const onTime=att.filter(a=>a.inTime&&a.status!=='Late'&&a.status!=='Half Day'&&a.status!=='Absent').length;
+  const onTime=att.filter(a=>recIsAttended(a)&&a.status!=='Late'&&a.status!=='Half Day'&&a.status!=='Absent').length;
   const absent=Math.max(0,staff.length-onTime-late-half);
   const segs=[{n:'On time',v:onTime,c:'#4A8C5C'},{n:'Late',v:late,c:'#C47A20'},{n:'Half Day',v:half,c:'#D4B483'},{n:'Absent',v:absent,c:'#C44B35'}].filter(s=>s.v>0);
   const total=staff.length;
@@ -3822,7 +3829,7 @@ function renderStaffRankChart(){
     let onTime=0,late=0,ot=0,early=0,half=0,absent=0;
     dates.forEach(d=>{
       const r=att.find(a=>a.staffId===s.id&&a.date===d);
-      if(!r||!r.inTime){absent++;return;}
+      if(!recIsAttended(r)){absent++;return;}
       if(r.status==='Late')late++;
       else if(r.status==='Overtime')ot++;
       else if(r.status==='Early Out')early++;
