@@ -157,6 +157,8 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .log-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--blush3);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);}
 .log-title{font-family:"Cormorant Garamond",serif;font-size:16px;font-weight:700;color:var(--brand-deep);margin-bottom:10px;}
 .log-scroll{max-height:160px;overflow-y:auto;}
+.mtx-dot{position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:var(--brand-deep);z-index:1;}
+.man-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--brand-deep);vertical-align:super;margin-left:2px;}
 .mtx-wrap{overflow:auto;max-height:70vh;border:1px solid var(--blush3);border-radius:10px;background:var(--surface);}
 .mtx{border-collapse:separate;border-spacing:0;font-size:11px;}
 .mtx th,.mtx td{padding:0;border-bottom:1px solid var(--blush2);border-right:1px solid var(--blush2);}
@@ -633,98 +635,8 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div id="mtxLegend" style="margin-top:11px"></div>
       <div id="editMatrixOut" style="margin-top:8px"></div>
     </div>
-
-    <div class="card" style="border:1.5px solid var(--brand)">
-      <div class="sec-title">👥 Bulk Correction — many staff at once</div>
-      <p style="font-size:12px;color:var(--text3);margin-bottom:12px">Select staff, choose a date range, and fix them all together. Nothing changes until you review the preview and confirm.</p>
-      <div style="margin-bottom:10px">
-        <label class="il">1. Staff <span style="color:var(--text3);font-weight:400">(tap to select)</span></label>
-        <div style="display:flex;gap:6px;margin:6px 0">
-          <button class="btn btn-outline" onclick="bulkSelectAll(true)" style="padding:5px 10px;font-size:11px;width:auto">Select all</button>
-          <button class="btn btn-outline" onclick="bulkSelectAll(false)" style="padding:5px 10px;font-size:11px;width:auto">Clear</button>
-        </div>
-        <div id="bulkStaffList" style="max-height:190px;overflow-y:auto;border:1px solid var(--blush3);border-radius:10px;padding:8px;background:var(--surface2)"></div>
-      </div>
-      <div class="ig-row">
-        <div class="ig"><label class="il">2. From date</label><input type="date" class="if" id="bulkFrom"></div>
-        <div class="ig"><label class="il">To date</label><input type="date" class="if" id="bulkTo"></div>
-      </div>
-      <div class="ig">
-        <label class="il">3. Only change days that are currently</label>
-        <select class="if" id="bulkFilter">
-          <option value="">Any status</option>
-          <option value="Half Day">Half Day</option>
-          <option value="Late">Late</option>
-          <option value="Early Out">Early Out</option>
-          <option value="Absent">Absent</option>
-          <option value="Overtime">Overtime</option>
-          <option value="Present">Present</option>
-        </select>
-      </div>
-      <div class="ig">
-        <label class="il">4. What to do</label>
-        <select class="if" id="bulkAction" onchange="toggleBulkFields()">
-          <option value="status">Set a new status</option>
-          <option value="times">Set IN &amp; OUT times (status auto-calculated)</option>
-        </select>
-      </div>
-      <div class="ig" id="bulkStatusRow">
-        <label class="il">New status</label>
-        <select class="if" id="bulkStatus">
-          <option value="Present">Present</option>
-          <option value="Late">Late</option>
-          <option value="Half Day">Half Day</option>
-          <option value="Early Out">Early Out</option>
-          <option value="Overtime">Overtime</option>
-          <option value="Absent">Absent</option>
-          <option value="Leave">Leave</option>
-        </select>
-      </div>
-      <div class="ig-row" id="bulkTimeRow" style="display:none">
-        <div class="ig"><label class="il">IN time</label><input type="time" class="if" id="bulkIn"></div>
-        <div class="ig"><label class="il">OUT time</label><input type="time" class="if" id="bulkOut"></div>
-      </div>
-      <div class="ig"><label class="il">Reason / note (optional)</label><input type="text" class="if" id="bulkReason" placeholder="e.g. exhibition duty"></div>
-      <button class="btn btn-outline" onclick="bulkPreview()" style="width:100%">🔍 Preview changes</button>
-      <div id="bulkOut2" style="margin-top:12px"></div>
-    </div>
-
-    <div class="card">
-      <div class="sec-title">✏️ Manual Attendance Entry</div>
-      <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Kisi bhi staff ka attendance manually set karo.</p>
-      <div style="margin-bottom:10px"><label class="il">Staff</label>
-        <select class="if" id="manStaff" onchange="loadManRec()"><option value="">-- Staff chunne --</option></select></div>
-      <div class="manual-irow"><div><label class="il">Date</label>
-        <input type="date" class="if" id="manDate" onchange="loadManRec()"></div>
-        <div><label class="il">Entry Type</label>
-        <select class="if" id="manType" onchange="toggleManFields()">
-          <option value="">-- Type --</option>
-          <option value="regular">✅ Regular Punch (IN + OUT)</option>
-          <option value="late_in">⏰ Late IN</option>
-          <option value="early_out">🌅 Early OUT</option>
-          <option value="absent">❌ Absent</option>
-          <option value="leave">📋 Leave</option>
-          <option value="half_day">🔶 Half Day</option>
-        </select></div></div>
-      <div id="manTimeRow" style="display:none" class="manual-irow">
-        <div><label class="il">IN Time</label><div style="display:flex;gap:6px"><input type="time" class="if" id="manInTime" style="flex:1"><button type="button" class="btn btn-outline" onclick="document.getElementById('manInTime').value=''" style="width:auto;padding:0 12px" title="IN Time clear karo">✖</button></div></div>
-        <div><label class="il">OUT Time</label><div style="display:flex;gap:6px"><input type="time" class="if" id="manOutTime" style="flex:1"><button type="button" class="btn btn-outline" onclick="document.getElementById('manOutTime').value=''" style="width:auto;padding:0 12px" title="OUT Time clear karo">✖</button></div></div></div>
-      <div id="manReasonRow" style="display:none;margin-bottom:10px">
-        <label class="il">Reason <span style="color:var(--red)">*</span></label>
-        <input type="text" class="if" id="manReason" placeholder="Reason likhna zaroori hai..."></div>
-      <div id="manCurRec" style="display:none;padding:10px;background:var(--blush2);border-radius:10px;font-size:12px;margin-bottom:12px">
-        <b>Current:</b> <span id="manCurText"></span>
-        <button type="button" id="undoOutBtn" onclick="undoOutPunch()" style="display:none;margin-top:8px;width:100%;background:var(--orange);color:#fff;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer">🔓 Galti se OUT hua tha? Ek tap mein wapas IN karo</button>
-      </div>
-      <div id="manErrMsg" style="display:none;color:var(--red);font-size:12px;margin-bottom:8px">⚠️ Reason zaroori hai</div>
-      <button class="btn btn-primary" onclick="saveManEntry()">💾 Save Entry</button>
-      <button class="btn btn-outline" onclick="delManEntry()" style="margin-top:8px">🗑️ Record Delete karo</button>
-    </div>
-    <div class="card" id="manLogCard" style="display:none">
-      <div class="sec-title">📋 Recent Records</div>
-      <div id="manLogList"></div>
-    </div>
   </div>
+
   <!-- DASHBOARD -->
   <div class="admin-scroll" id="tabDash">
     <div class="stats-grid">
@@ -2587,7 +2499,7 @@ function generateReport(){
         return;
       }
       workDays++;
-      if(!recIsAttended(rec)){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
+      if(!recIsAttended(rec)){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',manual:rec?.manual===true,inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
       else{
         if(rec.status==='Late')late++;
         if(rec.status==='Half Day')halfDay++;
@@ -2595,7 +2507,7 @@ function generateReport(){
         if(rec.status==='Early Out')earlyOut++;
         if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;
         grossEarned+=(rec.status==='Half Day')?dailyRate*0.5:dailyRate;
-        rows.push({date:d,staffId:s.id,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+        rows.push({date:d,staffId:s.id,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||rec.earlyOutReason||rec.absentReason||'',manual:rec.manual===true,inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
       }
     });
     const settings=getSettings();
@@ -2855,7 +2767,7 @@ function renderEditMatrix(){
     out.innerHTML='<div style="background:var(--orange-bg);color:var(--orange);padding:10px;border-radius:9px;font-size:12.5px">That range is too big to edit smoothly ('+staff.length+' staff × '+dates.length+' days). Please choose about '+Math.max(1,Math.floor(900/staff.length))+' days or fewer at a time.</div>';
     return;
   }
-  leg.innerHTML='<div class="mtx-legend">'+MTX_STATUSES.filter(x=>x.v).map(x=>'<span><i style="background:'+x.c+'"></i>'+x.l+' = '+x.v+'</span>').join('')+'<span><i style="background:var(--blush3)"></i>— = Week Off / Holiday</span></div>';
+  leg.innerHTML='<div class="mtx-legend">'+MTX_STATUSES.filter(x=>x.v).map(x=>'<span><i style="background:'+x.c+'"></i>'+x.l+' = '+x.v+'</span>').join('')+'<span><i style="background:var(--blush3)"></i>— = Week Off / Holiday</span><span><i class="mtx-dot" style="position:static;background:var(--brand-deep)"></i>= set by hand</span></div>';
   const att=getAtt();
   const head='<tr><th class="mtx-name">Staff</th>'+dates.map(d=>{
     const dt=new Date(d+'T00:00:00');
@@ -2869,8 +2781,9 @@ function renderEditMatrix(){
       const cur=rec?(rec.status||''):'';
       const st=mtxStyleFor(cur);
       const opts=MTX_STATUSES.map(o=>'<option value="'+o.v+'"'+(o.v===cur?' selected':'')+'>'+o.l+'</option>').join('');
-      const tip=escHtml(s.name)+' · '+d+(rec&&rec.inTime?'  IN '+rec.inTime+(rec.outTime?' · OUT '+rec.outTime:''):'');
-      return '<td style="background:'+st.bg+'"><select class="mtx-sel" style="color:'+st.c+'" title="'+tip+'" onchange="mtxChange(this,\''+s.id+'\',\''+d+'\')">'+opts+'</select></td>';
+      const isManual=rec&&rec.manual===true;
+      const tip=escHtml(s.name)+' · '+d+(rec&&rec.inTime?'  IN '+rec.inTime+(rec.outTime?' · OUT '+rec.outTime:''):'')+(isManual?'  (set by hand)':'');
+      return '<td style="background:'+st.bg+';position:relative">'+(isManual?'<span class="mtx-dot" title="Set by hand"></span>':'')+'<select class="mtx-sel" style="color:'+st.c+'" title="'+tip+'" onchange="mtxChange(this,\''+s.id+'\',\''+d+'\')">'+opts+'</select></td>';
     }).join('');
     return '<tr><td class="mtx-name" title="'+escHtml(s.name)+'">'+escHtml(s.name)+'</td>'+cells+'</tr>';
   }).join('');
@@ -2902,6 +2815,8 @@ function mtxChange(sel,staffId,date){
       rec.hours=(h===null)?0:h;
     }
     rec.method='manual';
+    rec.manual=true;                       // marks it as set by hand
+    rec.manualAt=new Date().toISOString();
     if(!setAtt(att)){showToast('❌ Save failed — try Optimize Storage',5000);return;}
     try{syncRecord(rec);}catch(e){}
     showToast('✅ '+staff.name+' · '+date+' → '+newStatus);
@@ -2909,110 +2824,15 @@ function mtxChange(sel,staffId,date){
   // Recolour just this cell — no need to rebuild the whole grid
   const st=mtxStyleFor(newStatus);
   sel.style.color=st.c;
-  if(sel.parentElement)sel.parentElement.style.background=st.bg;
-  renderTodayLog();updateDashStats();
-}
-let _bulkPlan=null;
-function renderBulkStaffList(){
-  const el=document.getElementById('bulkStaffList');
-  if(!el)return;
-  const staff=getStaff();
-  if(!staff.length){el.innerHTML='<div style="font-size:12px;color:var(--text3)">No staff added yet</div>';return;}
-  el.innerHTML=staff.map(s=>
-    '<label style="display:flex;align-items:center;gap:9px;padding:6px 4px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--blush2)">'+
-      '<input type="checkbox" class="bulkChk" value="'+s.id+'" style="width:17px;height:17px;flex-shrink:0">'+
-      '<span>'+escHtml(s.name)+(s.role?' <span style="color:var(--text3);font-size:11px">'+escHtml(s.role)+'</span>':'')+'</span>'+
-    '</label>').join('');
-}
-function bulkSelectAll(on){
-  document.querySelectorAll('.bulkChk').forEach(c=>{c.checked=on;});
-}
-function toggleBulkFields(){
-  const a=document.getElementById('bulkAction').value;
-  document.getElementById('bulkStatusRow').style.display=(a==='status')?'block':'none';
-  document.getElementById('bulkTimeRow').style.display=(a==='times')?'grid':'none';
-}
-function bulkPreview(){
-  const out=document.getElementById('bulkOut2');
-  const ids=Array.from(document.querySelectorAll('.bulkChk')).filter(c=>c.checked).map(c=>c.value);
-  const from=document.getElementById('bulkFrom').value,to=document.getElementById('bulkTo').value;
-  const filter=document.getElementById('bulkFilter').value;
-  const action=document.getElementById('bulkAction').value;
-  const newStatus=document.getElementById('bulkStatus').value;
-  const inT=document.getElementById('bulkIn').value,outT=document.getElementById('bulkOut').value;
-  const reason=document.getElementById('bulkReason').value.trim();
-  if(!ids.length){out.innerHTML='<div style="color:var(--red);font-size:12.5px">Please select at least one staff member.</div>';return;}
-  if(!from||!to){out.innerHTML='<div style="color:var(--red);font-size:12.5px">Please choose both dates.</div>';return;}
-  if(from>to){out.innerHTML='<div style="color:var(--red);font-size:12.5px">"From" date must be before "To" date.</div>';return;}
-  if(action==='times'&&!inT){out.innerHTML='<div style="color:var(--red);font-size:12.5px">Please enter an IN time.</div>';return;}
-  const staffMap={};getStaff().forEach(s=>{staffMap[s.id]=s;});
-  const settings=getSettings();
-  const att=getAtt();
-  const dates=getDatesInRange(from,to);
-  const plan=[];
-  ids.forEach(id=>{
-    const staff=staffMap[id];if(!staff)return;
-    dates.forEach(d=>{
-      if(isWeekOff(new Date(d+'T00:00:00'))||isHoliday(d))return;   // never touch off-days
-      const rec=att.find(a=>a.staffId===id&&a.date===d);
-      const cur=rec?rec.status:'(no record)';
-      if(filter&&cur!==filter)return;
-      let toStatus=newStatus,newIn=rec?rec.inTime:'',newOut=rec?rec.outTime:'';
-      if(action==='times'){
-        newIn=inT;newOut=outT||'';
-        if(outT){
-          const hrs=timeDiffHours(inT,outT);
-          const earlyMin=timeDiffMin(outT,staff.shiftOut||'18:00');
-          toStatus=classifyOutStatus(staff,hrs,earlyMin,outT).status;
-          if(toStatus==='Present'&&timeDiffMin(staff.shiftIn||'09:00',inT)>settings.grace)toStatus='Late';
-        }else{
-          toStatus=(timeDiffMin(staff.shiftIn||'09:00',inT)>settings.grace)?'Late':'Present';
-        }
-      }
-      if(cur===toStatus&&action==='status'&&!reason)return;   // nothing would change
-      plan.push({staffId:id,staffName:staff.name,date:d,from:cur,to:toStatus,newIn,newOut,reason});
-    });
-  });
-  if(!plan.length){out.innerHTML='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">Nothing matches those settings — no changes needed.</div>';_bulkPlan=null;return;}
-  _bulkPlan=plan;
-  const rows=plan.slice(0,30).map(p=>
-    '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--blush2)">'+
-      '<span>'+escHtml(p.staffName)+' · '+escHtml(p.date)+'</span>'+
-      '<span style="white-space:nowrap"><span style="color:var(--red)">'+escHtml(p.from)+'</span> → <span style="color:var(--green);font-weight:700">'+escHtml(p.to)+'</span>'+(p.newIn?' <span style="color:var(--text3)">'+escHtml(p.newIn)+(p.newOut?'-'+escHtml(p.newOut):'')+'</span>':'')+'</span>'+
-    '</div>').join('');
-  out.innerHTML='<div style="background:var(--orange-bg);color:var(--orange);padding:10px;border-radius:9px;font-size:12.5px;margin-bottom:9px"><b>'+plan.length+'</b> record(s) will change. Please review before applying.</div>'+
-    rows+(plan.length>30?'<div style="font-size:11px;color:var(--text3);padding:6px 0">…and '+(plan.length-30)+' more</div>':'')+
-    '<button class="btn btn-primary" style="margin-top:11px;width:100%" onclick="bulkApply()">✅ Apply these '+plan.length+' changes</button>';
-}
-function bulkApply(){
-  if(!_bulkPlan||!_bulkPlan.length){showToast('Run Preview first');return;}
-  const staffMap={};getStaff().forEach(s=>{staffMap[s.id]=s;});
-  const att=getAtt();
-  let n=0;
-  _bulkPlan.forEach(p=>{
-    let rec=att.find(a=>a.staffId===p.staffId&&a.date===p.date);
-    if(!rec){
-      rec={staffId:p.staffId,staffName:p.staffName,date:p.date,inTime:'',outTime:'',status:p.to,method:'manual',hours:0,reason:'',absentReason:''};
-      att.push(rec);
+  if(sel.parentElement){
+    sel.parentElement.style.background=st.bg;
+    if(newStatus&&!sel.parentElement.querySelector('.mtx-dot')){
+      const dot=document.createElement('span');dot.className='mtx-dot';dot.title='Set by hand';
+      sel.parentElement.insertBefore(dot,sel);
     }
-    rec.status=p.to;
-    if(p.newIn){rec.inTime=p.newIn;rec.outTime=p.newOut||'';}
-    if(p.to==='Absent'&&!p.newIn){rec.inTime='';rec.outTime='';}
-    if(rec.inTime&&rec.outTime)rec.hours=timeDiffHours(rec.inTime,rec.outTime);else rec.hours=0;
-    if(p.reason){if(p.to==='Absent')rec.absentReason=p.reason;else rec.reason=p.reason;}
-    rec.method='manual';
-    n++;
-  });
-  if(!setAtt(att)){showToast('❌ Save failed — try Optimize Storage first',5000);return;}
-  _bulkPlan.forEach(p=>{
-    const rec=getAtt().find(a=>a.staffId===p.staffId&&a.date===p.date);
-    if(rec){try{syncRecord(rec);}catch(e){}}
-  });
-  _bulkPlan=null;
+    if(!newStatus){const d0=sel.parentElement.querySelector('.mtx-dot');if(d0)d0.remove();}
+  }
   renderTodayLog();updateDashStats();
-  const msg='✅ '+n+' record(s) updated. Generate the report again to see them.';
-  document.getElementById('bulkOut2').innerHTML='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">'+msg+'</div>';
-  showToast('✅ '+n+' records corrected',5000);
 }
 let _recalcPlan=null;
 function safeHours(inT,outT){
@@ -3034,6 +2854,7 @@ function recalcAllStatuses(preview){
   att.forEach(r=>{
     if(!r||!r.inTime||!r.outTime)return;          // no punch pair — nothing to recompute
     if(r.status==='Leave')return;                  // admin decision, leave it alone
+    if(r.manual===true)return;                     // set by hand in the Matrix — never overwrite
     const staff=staffMap[r.staffId];
     if(!staff)return;
     const hrs=safeHours(r.inTime,r.outTime);
@@ -3188,6 +3009,7 @@ function renderReportTable(){
   else if(reportViewMode==='matrix')renderMatrixTable(lastReportData);
   else renderStaffWiseTable(lastReportData);
 }
+function manualMark(rec){return (rec&&rec.manual===true)?'<span class="man-dot" title="Set by hand"></span>':'';}
 function matrixCellInfo(status){
   // returns [letter, bgColor, textColor]
   if(status==='Present')return['P','rgba(74,143,74,0.15)','var(--green)'];
@@ -3353,7 +3175,7 @@ function renderMiniTable(rows,firstColLabel){
     let outCell=r.outTime;
     if(r.outPhoto){const outIdx=stashPhoto(r.outPhoto);outCell+=` <span class="photo-ic" onclick="viewPunchPhoto(${outIdx})">📷</span>`;}
     else if(r.hasOutPhoto&&r.staffId&&r.dateKey)outCell+=` <span class="photo-ic" onclick="showVpsPhoto('${r.staffId}','${r.dateKey}','out','${r.outTime||''}')">📷</span>`;
-    return `<tr><td${r.mono?' class="mono"':''}>${escHtml(r.label)}</td><td style="font-weight:600;color:${statusColor(r.status)}">${r.status}</td><td class="mono">${inCell}</td><td class="mono">${outCell}</td><td>${r.hours}</td><td class="reason-cell">${escHtml(r.reason)}</td></tr>`;
+    return `<tr><td${r.mono?' class="mono"':''}>${escHtml(r.label)}</td><td style="font-weight:600;color:${statusColor(r.status)}">${r.status}${manualMark(r)}</td><td class="mono">${inCell}</td><td class="mono">${outCell}</td><td>${r.hours}</td><td class="reason-cell">${escHtml(r.reason)}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
 function exportPayrollCSV(){
@@ -3950,11 +3772,12 @@ function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>
 function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(id==='punchPage'){document.querySelector('.nav-btn').classList.add('active');const ov=document.getElementById('scanOverlay');if(ov&&!mainStream)ov.classList.remove('hidden');}}
 function goAdmin(){curPin='';document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));document.getElementById('pinError').textContent='';document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('adminLoginPage').classList.add('active');}
 function adminLogout(){showPage('punchPage');}
-function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){populateManStaff();const md=document.getElementById('manDate');if(md&&!md.value)md.value=toKey(new Date());renderBulkStaffList();const bf=document.getElementById('bulkFrom'),bt=document.getElementById('bulkTo');if(bf&&!bf.value){const d=new Date();d.setDate(1);bf.value=toKey(d);}if(bt&&!bt.value)bt.value=toKey(new Date());toggleBulkFields();
-    // Editable matrix defaults to the last 7 days so it loads fast
+function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){
+    // Editable matrix is the only place attendance is changed by hand.
     const mf=document.getElementById('mtxFrom'),mt=document.getElementById('mtxTo');
     if(mf&&!mf.value){const d=new Date();d.setDate(d.getDate()-6);mf.value=toKey(d);}
-    if(mt&&!mt.value)mt.value=toKey(new Date());}}
+    if(mt&&!mt.value)mt.value=toKey(new Date());
+  }}
 
 // PIN
 function pk(k){if(curPin.length>=4)return;curPin+=k;document.getElementById('d'+(curPin.length-1)).classList.add('filled');if(curPin.length===4)checkPin();}
@@ -4186,119 +4009,6 @@ function showToast(msg,duration){clearTimeout(toastTmr);const old=document.query
 
 
 // ═══ MANUAL ENTRY ═══
-function populateManStaff(){
-  const sel=document.getElementById('manStaff'),staff=getStaff();
-  sel.innerHTML='<option value="">-- Staff chunne --</option>';
-  staff.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=s.name+(s.role?' ('+s.role+')':'');sel.appendChild(o);});
-}
-function toggleManFields(){
-  const t=document.getElementById('manType').value;
-  document.getElementById('manTimeRow').style.display=(t==='late_in'||t==='early_out'||t==='regular')?'grid':'none';
-  const reasonRow=document.getElementById('manReasonRow');
-  reasonRow.style.display=t?'block':'none';
-  const reasonLbl=reasonRow.querySelector('label');
-  const reasonInp=document.getElementById('manReason');
-  if(t==='regular'){
-    if(reasonLbl)reasonLbl.innerHTML='📝 Reason / Note (optional)';
-    if(reasonInp)reasonInp.placeholder='e.g. forgot to punch, camera issue, on-site work...';
-  }else{
-    if(reasonLbl)reasonLbl.innerHTML='📝 Reason <span style="color:var(--red)">*</span>';
-    if(reasonInp)reasonInp.placeholder='Reason is required for this entry type';
-  }
-  document.getElementById('manErrMsg').style.display='none';
-}
-function loadManRec(){
-  const sid=document.getElementById('manStaff').value,date=document.getElementById('manDate').value;
-  if(!sid||!date)return;
-  const rec=getAtt().find(a=>a.staffId===sid&&a.date===date);
-  const cd=document.getElementById('manCurRec'),ct=document.getElementById('manCurText'),undoBtn=document.getElementById('undoOutBtn');
-  if(rec){cd.style.display='block';ct.textContent=rec.status+' | IN:'+(rec.inTime||'--')+' OUT:'+(rec.outTime||'--')+(rec.reason?' | '+rec.reason:'');
-    if(rec.inTime)document.getElementById('manInTime').value=rec.inTime.substring(0,5);
-    if(rec.outTime)document.getElementById('manOutTime').value=rec.outTime.substring(0,5);
-    // Prefill existing reason so editing doesn't silently erase it
-    const existingReason=rec.reason||rec.earlyOutReason||rec.absentReason||'';
-    if(existingReason&&existingReason!=='(skipped)')document.getElementById('manReason').value=existingReason;
-    undoBtn.style.display=rec.outTime?'block':'none';
-  }else{cd.style.display='none';undoBtn.style.display='none';document.getElementById('manReason').value='';}
-  const card=document.getElementById('manLogCard'),list=document.getElementById('manLogList');
-  const recs=getAtt().filter(a=>a.staffId===sid).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8);
-  if(recs.length){card.style.display='block';
-    list.innerHTML=recs.map(r=>{const sc=r.status==='Absent'?'var(--red)':r.status==='Late'?'var(--orange)':'var(--green)';
-    return`<div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--blush2);font-size:12px">
-      <span style="font-family:monospace;color:var(--text3);min-width:72px">${r.date}</span>
-      <span style="font-weight:700;color:${sc};min-width:68px">${r.status}</span>
-      <span>${r.inTime||'--'}→${r.outTime||'--'}</span>
-      ${r.reason?`<span style="color:var(--orange);font-style:italic">${r.reason}</span>`:''}
-    </div>`}).join('');}
-}
-function undoOutPunch(){
-  const sid=document.getElementById('manStaff').value,date=document.getElementById('manDate').value;
-  if(!sid||!date)return;
-  const att=getAtt(),rec=att.find(a=>a.staffId===sid&&a.date===date);
-  if(!rec||!rec.outTime)return;
-  const settings=getSettings();
-  rec.outTime='';rec.hours=0;
-  // Recompute status from just the IN time (same logic as a fresh face-punch IN)
-  const staff=getStaff().find(s=>s.id===sid);
-  if(staff&&rec.inTime){
-    const lateMin=timeDiffMin(staff.shiftIn||'09:00',rec.inTime);
-    rec.status=(lateMin>settings.grace)?'Late':'Present';
-  }
-  if(!setAtt(att))return;
-  syncRecord(rec);
-  showToast('✅ OUT hata diya — '+(staff?staff.name:'Staff')+' ab wapas Punched IN hai');
-  loadManRec();renderTodayLog();updateDashStats();
-}
-function saveManEntry(){
-  const sid=document.getElementById('manStaff').value,date=document.getElementById('manDate').value,
-    type=document.getElementById('manType').value,reason=document.getElementById('manReason').value.trim(),
-    inT=document.getElementById('manInTime').value,outT=document.getElementById('manOutTime').value;
-  if(!sid||!date||!type){showToast('Staff, Date aur Type zaroori hai');return;}
-  // Regular Punch: reason optional, IN required
-  if(type==='regular'){
-    if(!inT){showToast('IN Time zaroori hai (Regular Punch ke liye)');return;}
-  }else if(!reason){document.getElementById('manErrMsg').style.display='block';return;}
-  document.getElementById('manErrMsg').style.display='none';
-  const staff=getStaff().find(s=>s.id===sid);if(!staff)return;
-  const settings=getSettings();
-  const att=getAtt();let rec=att.find(a=>a.staffId===sid&&a.date===date);
-  const sm={'late_in':'Late','early_out':'Present','absent':'Absent','leave':'Leave','half_day':'Half Day','regular':'Present'};
-  if(!rec){rec={staffId:sid,staffName:staff.name,date,inTime:inT||'',outTime:outT||'',status:sm[type],method:'manual',hours:0,reason:'',absentReason:''};att.push(rec);}
-  if(type==='late_in'){rec.status='Late';rec.reason=reason;if(inT)rec.inTime=inT;}
-  else if(type==='early_out'){rec.reason=reason;if(outT)rec.outTime=outT;}
-  else if(type==='absent'){rec.status='Absent';rec.absentReason=reason;rec.inTime='';rec.outTime='';}
-  else if(type==='regular'){rec.inTime=inT;rec.outTime=outT||'';rec.reason=reason||'';rec.absentReason='';}
-  else{rec.status=sm[type];rec.reason=reason;}
-  if(inT&&!rec.inTime)rec.inTime=inT;if(outT)rec.outTime=outT;
-  if(rec.inTime&&rec.outTime)rec.hours=timeDiffHours(rec.inTime,rec.outTime);
-  // Recalculate the status from the FINAL times, using exactly the same rule as a
-  // real face punch. Without this, fixing the times left a wrong status behind
-  // (e.g. 10 hours of work still showing as Half Day).
-  // Absent / Leave / Half Day are admin decisions, so those are left as chosen.
-  if(type==='regular'||type==='late_in'||type==='early_out'){
-    const shiftIn=staff.shiftIn||'09:00',shiftOut=staff.shiftOut||'18:00';
-    if(rec.inTime&&rec.outTime){
-      const earlyMin=timeDiffMin(rec.outTime,shiftOut);
-      const cls=classifyOutStatus(staff,rec.hours,earlyMin,rec.outTime);
-      let st=cls.status;
-      // Arriving after the grace period still counts as Late on an otherwise normal day
-      if(st==='Present'&&timeDiffMin(shiftIn,rec.inTime)>settings.grace)st='Late';
-      rec.status=st;
-    }else if(rec.inTime){
-      rec.status=(timeDiffMin(shiftIn,rec.inTime)>settings.grace)?'Late':'Present';
-    }
-  }
-  rec.method='manual';setAtt(att);syncRecord(rec);renderTodayLog();updateDashStats();
-  showToast('✅ '+staff.name+' ka record save! ('+rec.status+')');loadManRec();
-}
-function delManEntry(){
-  const sid=document.getElementById('manStaff').value,date=document.getElementById('manDate').value;
-  if(!sid||!date){showToast('Staff aur Date chunne');return;}
-  if(!confirm('Delete this record?'))return;
-  setAtt(getAtt().filter(a=>!(a.staffId===sid&&a.date===date)));
-  renderTodayLog();updateDashStats();showToast('🗑️ Record delete ho gaya');loadManRec();
-}
-
 init();
 </script>
 </body>
