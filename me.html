@@ -211,7 +211,8 @@ function computeSummary(staff,st,records,from,to){
     const rec=recMap[d];
     const rate=getDailyRate(staff,d);
     if(isWO||isHol){
-      const worked=!!(rec&&rec.inTime);
+      // Same rule as the admin app — a hand-set Present on a week-off has no punch time
+      const worked=recIsAttended(rec);
       const sandwiched=!worked&&isSandwichedOff(d,recMap,st);
       if(sandwiched){
         unpaidOffDays++;
