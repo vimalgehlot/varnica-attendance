@@ -631,7 +631,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div class="ig"><label class="il">From</label><input type="date" class="if" id="mtxFrom"></div>
         <div class="ig"><label class="il">To</label><input type="date" class="if" id="mtxTo"></div>
       </div>
-      <button class="btn btn-outline" onclick="renderEditMatrix()" style="width:100%">📊 Load Matrix</button>
+      <button class="btn btn-outline" onclick="loadMatrixFresh()" style="width:100%">📊 Load Matrix</button>
       <div id="mtxLegend" style="margin-top:11px"></div>
       <div id="editMatrixOut" style="margin-top:8px"></div>
     </div>
@@ -689,7 +689,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div><label class="il">To Date</label><input type="date" class="if" id="rptTo"></div>
       </div>
       <div class="ig"><label class="il">Staff Filter</label><select class="if" id="rptStaff"><option value="">All Staff</option></select></div>
-      <button class="btn btn-primary" onclick="generateReport()">📊 Generate Report</button>
+      <button class="btn btn-primary" onclick="generateReportFresh()">📊 Generate Report</button>
       <button class="btn btn-outline" onclick="exportReportCSV()" style="margin-top:6px">⬇️ Export Attendance CSV</button>
       <button class="btn btn-outline" onclick="exportPayrollCSV()" style="margin-top:6px">💰 Export Payroll CSV</button>
       <button class="btn btn-outline" onclick="downloadFullPayrollPDF()" style="margin-top:6px">🖨️ Full Payroll PDF (All Staff)</button>
@@ -1852,16 +1852,25 @@ function capturePunchThumbnail(){
   }catch(e){return null;}
 }
 function mergeAttRecords(base,incoming){
-  // Merge two attendance arrays, keeping the MORE COMPLETE record for each staff+date.
-  // Used both when pulling from the server and before pushing, so one device can
-  // never wipe out a punch that was made on another device.
+  // Merge two attendance arrays for each staff+date.
+  // Priority: a record the admin set by hand always beats an auto one — otherwise a
+  // manual correction (which has no punch times, so a low "completeness" score) would
+  // silently lose to the very record it was meant to replace. Between two hand-set
+  // records the newer one wins. Otherwise the more complete record wins.
   const score=r=>(r&&r.outTime?2:0)+(r&&r.inTime?1:0)+(r&&(r.reason||r.absentReason||r.earlyOutReason)?1:0);
+  function better(a,b){    // returns true if b should replace a
+    const am=a&&a.manual===true, bm=b&&b.manual===true;
+    if(bm&&!am)return true;
+    if(am&&!bm)return false;
+    if(am&&bm)return String(b.manualAt||'')>String(a.manualAt||'');
+    return score(b)>score(a);
+  }
   const out=base.slice();
   (incoming||[]).forEach(inc=>{
     if(!inc||!inc.staffId||!inc.date)return;
     const idx=out.findIndex(o=>o.staffId===inc.staffId&&o.date===inc.date);
     if(idx===-1){out.push(inc);return;}
-    if(score(inc)>score(out[idx]))out[idx]={...out[idx],...inc};
+    if(better(out[idx],inc))out[idx]={...out[idx],...inc};
   });
   return out;
 }
@@ -2461,6 +2470,44 @@ function setDefaultDates(){
   document.getElementById('rptTo').value=toKey(now);
   const staff=getStaff(),sel=document.getElementById('rptStaff');
   sel.innerHTML='<option value="">All Staff</option>'+staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('');
+}
+async function generateReportFresh(){
+  await refreshFromServer(false);
+  generateReport();
+}
+async function loadMatrixFresh(){
+  await refreshFromServer(false);
+  renderEditMatrix();
+}
+async function refreshFromServer(silent){
+  // Pull the latest attendance from the server and merge it in.
+  // Runs before a report or the matrix is shown, so every device sees the same
+  // truth. Previously this only happened once at app start, which is why two
+  // devices could show different numbers for the same day.
+  if(!navigator.onLine)return false;
+  const st=document.getElementById('syncStatus');
+  const old=st?st.textContent:'';
+  if(st&&!silent){st.textContent='Syncing…';st.style.color='var(--orange)';}
+  try{
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),6000);
+    const res=await fetch('/api/restore?bucket='+TOOL_ID,{signal:ctrl.signal});
+    clearTimeout(timer);
+    if(res.ok){
+      const json=await res.json();
+      const cloudAtt=(json&&json.ok&&json.data&&json.data.att)?json.data.att:null;
+      if(Array.isArray(cloudAtt)&&cloudAtt.length){
+        const merged=mergeAttRecords(cloudAtt,getAtt());
+        localStorage.setItem('vj_att',JSON.stringify(merged));
+      }
+      const cloudStaff=(json&&json.ok&&json.data&&json.data.staff)?json.data.staff:null;
+      if(Array.isArray(cloudStaff)&&cloudStaff.length&&cloudStaff.length>=getStaff().length){
+        localStorage.setItem('vj_staff',JSON.stringify(cloudStaff));
+      }
+    }
+  }catch(e){/* offline or slow — carry on with local data */}
+  if(st&&!silent){st.textContent=old||'Online';st.style.color='var(--green)';}
+  return true;
 }
 function generateReport(){
   const from=document.getElementById('rptFrom').value,to=document.getElementById('rptTo').value,sf=document.getElementById('rptStaff').value;
