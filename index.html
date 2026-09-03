@@ -159,6 +159,8 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .log-scroll{max-height:160px;overflow-y:auto;}
 .mtx-clock{position:absolute;bottom:0px;left:2px;font-size:8px;opacity:.42;cursor:pointer;z-index:2;line-height:1;}
 .mtx-clock:hover{opacity:1;}
+.mtx-cancel{position:absolute;bottom:0px;right:2px;font-size:8px;opacity:.35;cursor:pointer;z-index:2;line-height:1;}
+.mtx-cancel:hover{opacity:1;}
 .mtx-dot{position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:var(--brand-deep);z-index:1;}
 .man-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--brand-deep);vertical-align:super;margin-left:2px;}
 .mtx-wrap{overflow:auto;max-height:70vh;border:1px solid var(--blush3);border-radius:10px;background:var(--surface);}
@@ -1869,7 +1871,22 @@ function capturePunchThumbnail(){
     return c.toDataURL('image/jpeg',0.82);
   }catch(e){return null;}
 }
+function getTombstones(){try{return JSON.parse(localStorage.getItem('vj_attTombstones')||'[]');}catch(e){return [];}}
+function addTombstone(staffId,date){
+  let t=getTombstones().filter(x=>!(x.staffId===staffId&&x.date===date));
+  t.push({staffId,date,at:new Date().toISOString()});
+  if(t.length>60)t=t.slice(-60);
+  localStorage.setItem('vj_attTombstones',JSON.stringify(t));
+}
+function removeTombstone(staffId,date){
+  const t=getTombstones().filter(x=>!(x.staffId===staffId&&x.date===date));
+  localStorage.setItem('vj_attTombstones',JSON.stringify(t));
+}
 function mergeAttRecords(base,incoming){
+  // Deliberately-deleted records must never come back from a stale cloud copy.
+  const dead=getTombstones();
+  const isDead=r=>r&&dead.some(t=>t.staffId===r.staffId&&t.date===r.date);
+  base=base.filter(r=>!isDead(r));
   // Merge two attendance arrays for each staff+date.
   // Priority: a record the admin set by hand always beats an auto one — otherwise a
   // manual correction (which has no punch times, so a low "completeness" score) would
@@ -1886,6 +1903,7 @@ function mergeAttRecords(base,incoming){
   const out=base.slice();
   (incoming||[]).forEach(inc=>{
     if(!inc||!inc.staffId||!inc.date)return;
+    if(isDead(inc))return;
     const idx=out.findIndex(o=>o.staffId===inc.staffId&&o.date===inc.date);
     if(idx===-1){out.push(inc);return;}
     if(better(out[idx],inc))out[idx]={...out[idx],...inc};
@@ -2865,14 +2883,35 @@ function renderEditMatrix(){
       const tip=escHtml(s.name)+' · '+d+(rec&&rec.inTime?'  IN '+rec.inTime+(rec.outTime?' · OUT '+rec.outTime:''):'')+(isManual?'  (set by hand)':'');
       return '<td style="background:'+st.bg+';position:relative">'+(isManual?'<span class="mtx-dot" title="Set by hand"></span>':'')+
         '<span class="mtx-clock" title="Edit punch times" onclick="openTimeEdit(\''+s.id+'\',\''+d+'\')">⏱</span>'+
+        '<span class="mtx-cancel" title="Cancel punch — clear photo, mark Absent" onclick="if(confirm(\'Remove this punch and mark Absent?\'))cancelPunch(\''+s.id+'\',\''+d+'\')">🚫</span>'+
         '<select class="mtx-sel" style="color:'+st.c+'" title="'+tip+'" onchange="mtxChange(this,\''+s.id+'\',\''+d+'\')">'+opts+'</select></td>';
     }).join('');
     return '<tr><td class="mtx-name" title="'+escHtml(s.name)+'">'+escHtml(s.name)+'</td>'+cells+'</tr>';
   }).join('');
   out.innerHTML='<div class="mtx-wrap"><table class="mtx"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>'+
-    '<div style="font-size:10.5px;color:var(--text3);margin-top:7px">Tip: pick a status from any cell — it saves at once. Tap the ⏱ in a cell to edit the punch times for that day.</div>';
+    '<div style="font-size:10.5px;color:var(--text3);margin-top:7px">Tip: pick a status from any cell — it saves at once. Tap ⏱ to edit punch times, or 🚫 to instantly cancel a wrong punch (clears photo, marks Absent).</div>';
 }
 let _timeEditCtx=null;
+function cancelPunch(staffId,date){
+  const staff=getStaff().find(s=>s.id===staffId);
+  if(!staff)return;
+  const att=getAtt();
+  let rec=att.find(a=>a.staffId===staffId&&a.date===date);
+  if(!rec){
+    rec={staffId,staffName:staff.name,date,inTime:'',outTime:'',status:'Absent',method:'manual',hours:0,reason:'',absentReason:''};
+    att.push(rec);
+  }
+  rec.status='Absent';
+  rec.inTime='';rec.outTime='';rec.hours=0;
+  // The whole point of this button — no punch, no photo left behind
+  rec.hasInPhoto=false;rec.hasOutPhoto=false;delete rec.inPhoto;delete rec.outPhoto;
+  rec.method='manual';rec.manual=true;rec.manualAt=new Date().toISOString();
+  removeTombstone(staffId,date);
+  if(!setAtt(att)){showToast('❌ Save failed — try Optimize Storage',5000);return;}
+  try{syncRecord(rec);}catch(e){}
+  showToast('🚫 '+staff.name+' · '+date+' — punch cancelled, marked Absent');
+  renderEditMatrix();renderTodayLog();updateDashStats();
+}
 function openTimeEdit(staffId,date){
   const staff=getStaff().find(s=>s.id===staffId);
   if(!staff)return;
@@ -2895,11 +2934,28 @@ function saveTimeEdit(){
   if(!inT&&outT){msg.textContent='Please enter the IN time as well.';msg.style.display='block';return;}
   const att=getAtt();
   let rec=att.find(a=>a.staffId===staffId&&a.date===date);
+  if(!inT&&!outT){
+    // Both blank: same as choosing "–" in the matrix — clear the whole day, don't
+    // leave a zombie record behind with a stale status and an old photo attached.
+    if(rec){
+      const i=att.indexOf(rec);att.splice(i,1);
+      addTombstone(staffId,date);
+      if(!setAtt(att)){msg.textContent='Save failed — try Optimize Storage.';msg.style.display='block';return;}
+    }
+    closePopup('timeEditPopup');
+    showToast('🗑️ '+staff.name+' · '+date+' cleared');
+    _timeEditCtx=null;
+    renderEditMatrix();renderTodayLog();updateDashStats();
+    return;
+  }
+  removeTombstone(staffId,date);
   if(!rec){
     rec={staffId,staffName:staff.name,date,inTime:'',outTime:'',status:'Present',method:'manual',hours:0,reason:'',absentReason:''};
     att.push(rec);
   }
   rec.inTime=inT;rec.outTime=outT||'';
+  // A fresh time entry replaces whatever punch photo used to be here
+  rec.hasInPhoto=false;rec.hasOutPhoto=false;delete rec.inPhoto;delete rec.outPhoto;
   if(inT&&outT){
     const h=safeHours(inT,outT);
     if(h===null){msg.textContent='OUT time must be after IN time.';msg.style.display='block';return;}
@@ -2913,8 +2969,6 @@ function saveTimeEdit(){
   }else if(inT){
     rec.hours=0;
     rec.status=(timeDiffMin(staff.shiftIn||'09:00',inT)>getSettings().grace)?'Late':'Present';
-  }else{
-    rec.hours=0;
   }
   rec.method='manual';rec.manual=true;rec.manualAt=new Date().toISOString();
   if(!setAtt(att)){msg.textContent='Save failed — try Optimize Storage.';msg.style.display='block';return;}
@@ -2931,19 +2985,27 @@ function mtxChange(sel,staffId,date){
   const att=getAtt();
   let rec=att.find(a=>a.staffId===staffId&&a.date===date);
   if(!newStatus){
-    // "–" chosen: clear this day's record entirely
+    // "–" chosen: clear this day's record entirely. Tombstone it so a stale cloud
+    // copy (which may still have the old record for a few seconds) can never bring
+    // it back — this is what was making deletions silently revert.
     if(rec){
       const i=att.indexOf(rec);att.splice(i,1);
+      addTombstone(staffId,date);
       if(!setAtt(att)){showToast('❌ Save failed',4000);return;}
       showToast('🗑️ '+staff.name+' · '+date+' cleared');
     }
   }else{
+    removeTombstone(staffId,date);   // a real record now exists again — let it sync normally
     if(!rec){
       rec={staffId,staffName:staff.name,date,inTime:'',outTime:'',status:newStatus,method:'manual',hours:0,reason:'',absentReason:''};
       att.push(rec);
     }
     rec.status=newStatus;
-    if(newStatus==='Absent'||newStatus==='Leave'){rec.inTime='';rec.outTime='';rec.hours=0;}
+    if(newStatus==='Absent'||newStatus==='Leave'){
+      rec.inTime='';rec.outTime='';rec.hours=0;
+      // An old accidental punch's photo must not linger on a day now marked Absent/Leave
+      rec.hasInPhoto=false;rec.hasOutPhoto=false;delete rec.inPhoto;delete rec.outPhoto;
+    }
     else if(rec.inTime&&rec.outTime){
       const h=safeHours(rec.inTime,rec.outTime);
       rec.hours=(h===null)?0:h;
