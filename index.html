@@ -776,8 +776,14 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div id="settingsFullOnly">
     <div class="card">
       <div class="sec-title">🔄 Recalculate Attendance Statuses</div>
-      <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">Older records kept the status they were saved with, so some may be wrong (e.g. a full day showing as Half Day). This rechecks every record against each staff member's own shift hours. Nothing changes until you confirm.</div>
-      <button class="btn btn-outline" onclick="recalcAllStatuses(true)" style="width:100%">🔍 Check All Records</button>
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">Older records kept the status they were saved with, so some may be wrong (e.g. a full day showing as Half Day). This rechecks records against each staff member's own shift hours. Nothing changes until you confirm.</div>
+      <div style="font-size:11px;color:var(--orange);background:var(--orange-bg);padding:8px 10px;border-radius:8px;margin-bottom:10px">🔒 Records on/before <b>31 Aug 2026</b> are locked — that period's status &amp; salary is already finalised, so it is never touched by this tool, whatever range you pick below.</div>
+      <div class="ig-row">
+        <div class="ig"><label class="il">From Date</label><input type="date" class="if" id="recalcFrom"></div>
+        <div class="ig"><label class="il">To Date</label><input type="date" class="if" id="recalcTo"></div>
+      </div>
+      <div style="font-size:10.5px;color:var(--text3);margin-bottom:10px">Leave both blank to check everything after the lock date.</div>
+      <button class="btn btn-outline" onclick="recalcAllStatuses(true)" style="width:100%">🔍 Check Records</button>
       <div id="recalcOut" style="margin-top:12px"></div>
     </div>
     <div class="card">
@@ -1263,14 +1269,35 @@ async function restoreFromCloud(){
     setTimeout(()=>location.reload(),1200);
   }catch(e){showToast('❌ Restore failed: '+e.message);}
 }
+async function pushStaffNow(){
+  // Immediate (non-debounced) push used right after a staff edit, so we know within
+  // a second or two whether the change actually reached the server — instead of
+  // silently hoping the 800ms background sync got through.
+  try{
+    const res=await fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,key:'staff',value:getStaff()})});
+    return res.ok;
+  }catch(e){return false;}
+}
 async function pullCloudData(){
   try{
     const res=await fetch('/api/restore?bucket='+TOOL_ID);
     const json=await res.json();
     if(!json.ok||!json.data)return;
     const d=json.data;
-    // Staff & Settings: VPS is the shared source of truth across all devices
-    if(d.staff)localStorage.setItem('vj_staff',JSON.stringify(d.staff));
+    // Staff: merge by updatedAt instead of a blind overwrite — a plain overwrite here was
+    // silently reverting a timing/detail edit whenever its cloud push hadn't landed yet
+    // (e.g. edited while offline, or the tab closed before the debounced push fired).
+    if(d.staff){
+      const localStaff=getStaff();
+      const mergedStaff=mergeStaffRecords(d.staff,localStaff);
+      localStorage.setItem('vj_staff',JSON.stringify(mergedStaff));
+      // If a local-only edit survived the merge, the cloud copy is stale — repair it
+      // now so every other device picks up the correct data too.
+      if(JSON.stringify(mergedStaff)!==JSON.stringify(d.staff)){
+        fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,key:'staff',value:mergedStaff})}).catch(()=>{});
+      }
+    }
+    // Settings: VPS is the shared source of truth across all devices
     if(d.settings)localStorage.setItem('vj_settings',JSON.stringify(d.settings));
     // Attendance: merge (don't lose today's not-yet-synced local punches if cloud is slightly behind)
     if(d.att){
@@ -1910,6 +1937,20 @@ function mergeAttRecords(base,incoming){
   });
   return out;
 }
+function mergeStaffRecords(base,incoming){
+  // Merge two staff arrays by id. The record with the newer updatedAt wins —
+  // this stops a same-day timing/detail edit on one device from being silently
+  // reverted by a stale cloud copy that reaches it (or another device) before
+  // the edit has finished syncing. A record missing on one side is kept as-is.
+  const out=base.slice();
+  (incoming||[]).forEach(inc=>{
+    if(!inc||!inc.id)return;
+    const idx=out.findIndex(o=>o.id===inc.id);
+    if(idx===-1){out.push(inc);return;}
+    if(String(inc.updatedAt||'')>String(out[idx].updatedAt||''))out[idx]=inc;
+  });
+  return out;
+}
 async function syncTodayFromServer(staffId){
   // Pull just today's row for this one staff member — small and fast.
   const today=toKey(new Date());
@@ -2298,8 +2339,11 @@ async function saveStaff(){
   if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
   if(!regPhotos.length&&eid){
     const staff=getStaff(),s=staff.find(x=>x.id===eid);
-    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;}
-    setStaff(staff);closeModal('staffModal');stopRegCam();renderStaffList();showToast('Updated!');return;
+    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.updatedAt=new Date().toISOString();}
+    setStaff(staff);closeModal('staffModal');stopRegCam();renderStaffList();
+    const ok=await pushStaffNow();
+    showToast(ok?'✅ Updated aur cloud pe sync ho gaya!':'⚠️ Update ho gaya par cloud sync fail — internet check karo',ok?3000:6000);
+    return;
   }
   _staffSaving=true;
   const saveBtn=document.getElementById('saveStaffBtn');
@@ -2316,10 +2360,11 @@ async function saveStaff(){
     const staff=getStaff();
     // Compress photo before storing (240x240 max, JPEG q=0.75) — prevents quota-exceeded
     const smallPhoto=await compressPhoto(regPhotos[0],240,0.75);
-    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.descriptors=descs;s.photo=smallPhoto;}}
-    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,salaryBasis,portalPin,pf,esi,dob,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString()});
+    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.descriptors=descs;s.photo=smallPhoto;s.updatedAt=new Date().toISOString();}}
+    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,salaryBasis,portalPin,pf,esi,dob,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString(),updatedAt:new Date().toISOString()});
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
-    showToast('✅ '+name+' saved with '+descs.length+' face samples!');
+    const ok=await pushStaffNow();
+    showToast((ok?'✅ ':'⚠️ ')+name+' saved with '+descs.length+' face samples!'+(ok?'':' (cloud sync fail — internet check karo)'));
   }catch(e){showToast('Error: '+e.message);}
   finally{
     _staffSaving=false;
@@ -2328,7 +2373,13 @@ async function saveStaff(){
 }
 function delStaff(id){if(!confirm('Delete this staff?'))return;setStaff(getStaff().filter(s=>s.id!==id));buildMatcher();renderStaffList();showToast('Deleted');}
 function openTiming(id){const s=getStaff().find(x=>x.id===id);if(!s)return;document.getElementById('timingId').value=id;document.getElementById('timingName').textContent='👤 '+s.name;document.getElementById('tIn').value=s.shiftIn;document.getElementById('tOut').value=s.shiftOut;openModal('timingModal');}
-function saveTiming(){const id=document.getElementById('timingId').value,staff=getStaff(),s=staff.find(x=>x.id===id);if(s){s.shiftIn=document.getElementById('tIn').value;s.shiftOut=document.getElementById('tOut').value;}setStaff(staff);closeModal('timingModal');renderStaffList();showToast('Timing updated!');}
+async function saveTiming(){
+  const id=document.getElementById('timingId').value,staff=getStaff(),s=staff.find(x=>x.id===id);
+  if(s){s.shiftIn=document.getElementById('tIn').value;s.shiftOut=document.getElementById('tOut').value;s.updatedAt=new Date().toISOString();}
+  setStaff(staff);closeModal('timingModal');renderStaffList();
+  const ok=await pushStaffNow();
+  showToast(ok?'✅ Timing updated aur cloud pe sync ho gaya!':'⚠️ Timing save ho gayi par cloud sync fail — internet check karke phir se kholo taaki confirm ho jaye',ok?3000:6000);
+}
 
 // ══════════════════════════════════════════════
 // APPROVALS
@@ -3031,6 +3082,7 @@ function mtxChange(sel,staffId,date){
   renderTodayLog();updateDashStats();
 }
 let _recalcPlan=null;
+const RECALC_LOCK_TILL='2026-08-31';   // hard floor — records dated on/before this are NEVER touched by Recalculate, no matter what range is picked in the UI. Move this date forward once a month's status+salary is finalised and you want to unlock the next one.
 function safeHours(inT,outT){
   // Returns hours, handling an OUT time that falls after midnight.
   // Returns null when the data cannot be trusted.
@@ -3046,9 +3098,14 @@ function recalcAllStatuses(preview){
   const staffMap={};getStaff().forEach(s=>{staffMap[s.id]=s;});
   const settings=getSettings();
   const att=getAtt();
+  const fromEl=document.getElementById('recalcFrom'),toEl=document.getElementById('recalcTo');
+  const from=fromEl&&fromEl.value?fromEl.value:'',to=toEl&&toEl.value?toEl.value:'';
   const changes=[],suspect=[];
   att.forEach(r=>{
     if(!r||!r.inTime||!r.outTime)return;          // no punch pair — nothing to recompute
+    if(r.date<=RECALC_LOCK_TILL)return;            // locked period — already finalised, hard floor regardless of the range picked above
+    if(from&&r.date<from)return;                   // outside the chosen From date
+    if(to&&r.date>to)return;                       // outside the chosen To date
     if(r.status==='Leave')return;                  // admin decision, leave it alone
     if(r.manual===true)return;                     // set by hand in the Matrix — never overwrite
     const staff=staffMap[r.staffId];
