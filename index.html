@@ -833,6 +833,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div class="set-row"><div><div class="set-lbl">Absent Threshold (%)</div><div class="set-sub">Worked hours below this % of shift = Absent, even if punched</div></div><div class="set-val" onclick="editSetting('absentPct')" id="absentPctVal">50%</div></div>
       <div class="set-row"><div><div class="set-lbl">Half Day Cutoff (%)</div><div class="set-sub">Below this % (but above Absent %) = Half Day, half pay. Between this and Full Day % = Early Out, full pay + reason. Default = same as Full Day % (no Early-Out band).</div></div><div class="set-val" onclick="editSetting('halfDayPct')" id="halfDayPctVal">90%</div></div>
       <div class="set-row"><div><div class="set-lbl">Full Day Threshold (%)</div><div class="set-sub">At/above this % (and on time) = full clean Present</div></div><div class="set-val" onclick="editSetting('fullDayPct')" id="fullDayPctVal">90%</div></div>
+      <div style="margin:10px 0 2px;padding:10px 12px;background:rgba(0,0,0,0.03);border-radius:10px" id="pctBandSummary"></div>
     </div>
     <div class="card">
       <div class="sec-title">📅 Week Off & Holidays</div>
@@ -2444,12 +2445,32 @@ function loadSettingsUI(){
   document.getElementById('absentPctVal').textContent=(typeof s.absentPct==='number'?s.absentPct:50)+'%';
   document.getElementById('halfDayPctVal').textContent=(typeof s.halfDayPct==='number'?s.halfDayPct:(typeof s.fullDayPct==='number'?s.fullDayPct:90))+'%';
   document.getElementById('fullDayPctVal').textContent=(typeof s.fullDayPct==='number'?s.fullDayPct:90)+'%';
+  renderPctBandSummary(s);
   document.getElementById('weekOffSel').value=s.weekOff||0;
   document.getElementById('pfRateVal').textContent=s.pfRate+'%';
   document.getElementById('esiRateVal').textContent=s.esiRate+'%';
   document.getElementById('esiCeilingVal').textContent='₹'+Number(s.esiCeiling).toLocaleString('en-IN');
   renderHolidays();
   refreshStorageDisplay();
+}
+function renderPctBandSummary(s){
+  // Live from–to preview of the Absent / Half Day / Early Out / Present ladder,
+  // built from whatever the three % settings currently are — so it's never
+  // ambiguous what range each status actually covers.
+  const el=document.getElementById('pctBandSummary');if(!el)return;
+  const absent=(typeof s.absentPct==='number'?s.absentPct:50);
+  const full=(typeof s.fullDayPct==='number'?s.fullDayPct:90);
+  let half=(typeof s.halfDayPct==='number'?s.halfDayPct:full);
+  if(half>full)half=full;
+  if(half<absent)half=absent;
+  let html='<div style="font-size:11px;line-height:2;color:var(--text2)">';
+  html+='<div>🔴 <b>0–'+absent+'%</b> kaam → <b>Absent</b></div>';
+  html+='<div>🟠 <b>'+absent+'–'+half+'%</b> kaam → <b>Half Day</b> (aadhi salary)</div>';
+  if(half<full)html+='<div>🟡 <b>'+half+'–'+full+'%</b> kaam → <b>Early Out</b> (poori salary + reason)</div>';
+  else html+='<div style="color:var(--text3)">🟡 Early Out (%) gap khaali hai — Half Day Cutoff aur Full Day Threshold barabar hain</div>';
+  html+='<div>🟢 <b>'+full+'%+</b> kaam → <b>Present</b> / Overtime</div>';
+  html+='</div>';
+  el.innerHTML=html;
 }
 function refreshStorageDisplay(){
   const bytes=getStorageBytes(),mb=bytes/1024/1024;
