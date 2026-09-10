@@ -788,7 +788,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     </div>
     <div class="card">
       <div class="sec-title">🩺 Punch Data Health Check</div>
-      <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">Compares this device's punches with the server for the last 14 days. Use this whenever a staff member says a punch is missing.</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">Compares this device's punches AND reasons with the server for the last 14 days. Use this whenever a staff member says a punch — or a reason they typed — is missing.</div>
       <button class="btn btn-outline" onclick="punchHealthCheck()" style="width:100%">🔍 Check Device vs Server</button>
       <div id="punchHealthOut" style="margin-top:12px"></div>
     </div>
@@ -2881,30 +2881,48 @@ async function punchHealthCheck(){
   serverRecs.forEach(r=>{S[key(r)]=r;});
   const allKeys=Object.keys(Object.assign({},L,S));
   const onlyLocal=[],onlyServer=[],differ=[];
+  // A record "has data" if it has a punch OR a reason — Absent-day records (no
+  // punch, only a reason) used to be skipped entirely here, so a reason that
+  // existed on only one side never showed up as a mismatch.
+  const hasData=r=>r&&(r.inTime||r.lateReason||r.earlyOutReason||r.absentReason||r.reason);
+  const reasonOf=r=>reasonSummary(r||{});
   allKeys.forEach(k=>{
     const l=L[k],s=S[k];
-    if(l&&!s){if(l.inTime)onlyLocal.push(l);return;}
-    if(!l&&s){if(s.inTime)onlyServer.push(s);return;}
-    if((l.inTime||'')!==(s.inTime||'')||(l.outTime||'')!==(s.outTime||''))differ.push({l,s});
+    if(l&&!s){if(hasData(l))onlyLocal.push(l);return;}
+    if(!l&&s){if(hasData(s))onlyServer.push(s);return;}
+    const timeDiffers=(l.inTime||'')!==(s.inTime||'')||(l.outTime||'')!==(s.outTime||'');
+    const reasonDiffers=reasonOf(l)!==reasonOf(s);
+    if(timeDiffers||reasonDiffers)differ.push({l,s,timeDiffers,reasonDiffers});
   });
   const nm=r=>escHtml(staffMap[r.staffId]||r.staffName||r.staffId);
-  const line=(r,note,color)=>'<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--blush2)"><span>'+nm(r)+' · '+escHtml(r.date)+'</span><span style="color:'+color+';white-space:nowrap">'+note+'</span></div>';
+  const line=(r,note,color)=>'<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--blush2)"><span>'+nm(r)+' · '+escHtml(r.date)+'</span><span style="color:'+color+';white-space:nowrap">'+escHtml(note)+'</span></div>';
+  const describeLite=r=>{
+    const t=(r.inTime||'')+(r.outTime?' → '+r.outTime:'');
+    const rs=reasonOf(r);
+    if(t&&rs)return t+' · '+rs;
+    return t||rs||(r.status||'-');
+  };
   let html='<div style="font-size:12px;color:var(--text2);margin-bottom:9px">Last 14 days · '+localRecs.length+' on this device · '+serverRecs.length+' on server</div>';
   if(usedFallback)html+='<div style="background:var(--orange-bg);color:var(--orange);padding:8px 10px;border-radius:9px;font-size:11.5px;margin-bottom:9px">ℹ️ Permanent archive is not installed on the server — using the main cloud backup instead. Ask your developer to deploy <b>attendance-archive-router.js</b> for full protection.</div>';
   if(!onlyLocal.length&&!onlyServer.length&&!differ.length){
-    html+='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">✅ This device and the server match perfectly. No punches are missing.</div>';
+    html+='<div style="background:var(--green-bg);color:var(--green);padding:10px;border-radius:9px;font-size:12.5px">✅ This device and the server match perfectly — punches and reasons both.</div>';
   }else{
     if(onlyLocal.length){
-      html+='<div style="background:var(--orange-bg);color:var(--orange);padding:9px;border-radius:9px;font-size:12px;margin-bottom:7px">⚠️ '+onlyLocal.length+' punch(es) exist only on THIS device — not yet on the server.</div>';
-      html+=onlyLocal.slice(0,12).map(r=>line(r,(r.inTime||'')+(r.outTime?' → '+r.outTime:''),'var(--orange)')).join('');
+      html+='<div style="background:var(--orange-bg);color:var(--orange);padding:9px;border-radius:9px;font-size:12px;margin-bottom:7px">⚠️ '+onlyLocal.length+' record(s) exist only on THIS device — not yet on the server.</div>';
+      html+=onlyLocal.slice(0,12).map(r=>line(r,describeLite(r),'var(--orange)')).join('');
     }
     if(onlyServer.length){
-      html+='<div style="background:rgba(58,110,168,0.12);color:var(--blue);padding:9px;border-radius:9px;font-size:12px;margin:9px 0 7px">ℹ️ '+onlyServer.length+' punch(es) exist on the SERVER but not on this device (made on another device).</div>';
-      html+=onlyServer.slice(0,12).map(r=>line(r,(r.inTime||'')+(r.outTime?' → '+r.outTime:''),'var(--blue)')).join('');
+      html+='<div style="background:rgba(58,110,168,0.12);color:var(--blue);padding:9px;border-radius:9px;font-size:12px;margin:9px 0 7px">ℹ️ '+onlyServer.length+' record(s) exist on the SERVER but not on this device (made on another device).</div>';
+      html+=onlyServer.slice(0,12).map(r=>line(r,describeLite(r),'var(--blue)')).join('');
     }
     if(differ.length){
       html+='<div style="background:var(--red-bg);color:var(--red);padding:9px;border-radius:9px;font-size:12px;margin:9px 0 7px">❗ '+differ.length+' record(s) differ between device and server.</div>';
-      html+=differ.slice(0,12).map(d=>line(d.l,'device '+(d.l.inTime||'–')+'/'+(d.l.outTime||'–')+' · server '+(d.s.inTime||'–')+'/'+(d.s.outTime||'–'),'var(--red)')).join('');
+      html+=differ.slice(0,12).map(d=>{
+        const parts=[];
+        if(d.timeDiffers)parts.push('time: dev '+(d.l.inTime||'–')+'/'+(d.l.outTime||'–')+' vs srv '+(d.s.inTime||'–')+'/'+(d.s.outTime||'–'));
+        if(d.reasonDiffers)parts.push('reason: dev "'+(reasonOf(d.l)||'–')+'" vs srv "'+(reasonOf(d.s)||'–')+'"');
+        return line(d.l,parts.join(' | '),'var(--red)');
+      }).join('');
     }
     html+='<button class="btn btn-primary" style="margin-top:11px;width:100%" onclick="repairPunchData()">🔧 Repair — merge both sides safely</button>';
   }
