@@ -1987,7 +1987,15 @@ function mergeAttRecords(base,incoming){
     const am=a&&a.manual===true, bm=b&&b.manual===true;
     if(bm&&!am)return true;
     if(am&&!bm)return false;
-    if(am&&bm)return String(b.manualAt||'')>String(a.manualAt||'');
+    if(am&&bm){
+      const at=String(a.manualAt||''),bt=String(b.manualAt||'');
+      // Same hand-set timestamp = the same edit seen twice. Fall through to
+      // completeness instead of blindly keeping `a`: a reason typed after the
+      // manual edit doesn't change manualAt, so a tie used to discard the copy
+      // that actually had the reason on it.
+      if(bt!==at)return bt>at;
+      return score(b)>score(a);
+    }
     return score(b)>score(a);
   }
   const out=base.slice();
@@ -2318,6 +2326,9 @@ function submitWarning(){
     if(warningType==='late'){rec.status='Late';rec.lateReason=reason;}
     else{rec.earlyOutReason=reason;rec.status=classifyOutStatus(staff,rec.hours||0,0,rec.outTime||'').status;}
     rec.reason=reason; // kept for old-record compatibility, not used for display anymore
+    // Same reason as in submitAbsentReason: a reason added to a hand-set record
+    // must count as a newer edit, or the merge keeps the reason-less copy.
+    if(rec.manual===true)rec.manualAt=new Date().toISOString();
     if(!setAtt(att)){
       const m=document.getElementById('wpReqMsg');m.style.display='block';m.textContent='❌ Save fail hua (storage full). Maine auto-cleanup kar diya — "Submit" phir se dabao.';
       return;
@@ -2358,6 +2369,10 @@ function submitAbsentReason(){
     else if(existing.status==='Late')existing.lateReason=reason;
     else if(existing.status==='Early Out')existing.earlyOutReason=reason;
     else existing.reason=reason; // Half Day / other — no dedicated field yet
+    // Adding a reason to a hand-set record is itself a newer edit. Without
+    // bumping manualAt the merge saw two manual copies with identical
+    // timestamps and kept the older (reason-less) one on the next app load.
+    if(existing.manual===true)existing.manualAt=new Date().toISOString();
     if(!setAtt(att)){failMsg();return;}
   }
   else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:targetDate,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});if(!setAtt(att)){failMsg();return;}}
