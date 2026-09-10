@@ -1304,8 +1304,10 @@ async function pullCloudData(){
     if(d.att){
       // Field-aware merge — the old version threw away the local copy whenever the
       // scores tied, which silently lost reasons and locally-made punches.
-      const merged=mergeAttRecords(d.att,getAtt());
-      localStorage.setItem('vj_att',JSON.stringify(merged));
+      // Routed through setAtt() (not a raw localStorage write) so the same
+      // de-duplication safety net applies here too, and so a merge that pulls in
+      // something the cloud didn't have gets pushed back automatically.
+      setAtt(mergeAttRecords(d.att,getAtt()));
     }
   }catch(e){ /* offline or backend unreachable — silently continue with whatever is local */ }
 }
@@ -1327,7 +1329,38 @@ function applyKioskMode(){
 const getStaff=()=>DB.get('staff')||[];
 const setStaff=v=>{if(!DB.set('staff',v)){showToast('❌ Staff save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
 const getAtt=()=>DB.get('att')||[];
-const setAtt=v=>{if(!DB.set('att',v)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
+function dedupeAtt(arr){
+  // Safety net: if the same staffId+date ever ends up as two separate records
+  // (e.g. a reason-answer that didn't find the original record and pushed a
+  // fresh one instead of updating it), collapse them into ONE before saving —
+  // keeping every punch time and every reason field, never silently dropping
+  // whichever one .find() would have ignored. Runs on every save, so any
+  // duplicate — however it was created — gets cleaned up automatically.
+  const score=r=>(r&&r.outTime?2:0)+(r&&r.inTime?1:0)+(r&&(r.reason||r.lateReason||r.absentReason||r.earlyOutReason)?1:0);
+  const byKey={};const order=[];
+  (arr||[]).forEach(r=>{
+    if(!r||!r.staffId||!r.date)return;
+    const k=r.staffId+'|'+r.date;
+    if(!(k in byKey)){byKey[k]=r;order.push(k);return;}
+    const cur=byKey[k];
+    const rm=r.manual===true,cm=cur.manual===true;
+    let winner;
+    if(rm&&!cm)winner=r;
+    else if(cm&&!rm)winner=cur;
+    else if(rm&&cm)winner=(String(r.manualAt||'')>String(cur.manualAt||''))?r:cur;
+    else winner=(score(r)>=score(cur))?r:cur;
+    const loser=(winner===r)?cur:r;
+    // Field-level merge so a reason on the "losing" duplicate is never lost.
+    byKey[k]=Object.assign({},loser,winner,{
+      lateReason:winner.lateReason||loser.lateReason,
+      earlyOutReason:winner.earlyOutReason||loser.earlyOutReason,
+      absentReason:winner.absentReason||loser.absentReason,
+      reason:winner.reason||loser.reason
+    });
+  });
+  return order.map(k=>byKey[k]);
+}
+const setAtt=v=>{const deduped=dedupeAtt(Array.isArray(v)?v:[]);if(!DB.set('att',deduped)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
 const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true,singlePunchMode:true,reasonCompulsory:true,staffPortalSalary:true,absentPct:50,fullDayPct:90,halfDayPct:90},DB.get('settings')||{});
 const setSettings=v=>{if(!DB.set('settings',v)){showToast('❌ Settings save FAIL');return false;}return true;};
 const getPending=()=>DB.get('pending')||[];
@@ -2072,6 +2105,11 @@ function doPunch(staff,photo){
   const now=new Date(),todayKey=toKey(now),timeStr=now.toLocaleTimeString('en-IN',{hour12:false});
   const settings=getSettings(),att=getAtt();
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
+  // If this staff+date was ever cleared via the admin Matrix ("–"), a tombstone
+  // exists so a stale cloud copy can't resurrect it. A brand-new real punch means
+  // the day is active again — the tombstone must go, or the very record this
+  // punch is about to create would get silently filtered out on the next merge.
+  removeTombstone(staff.id,todayKey);
   // Photos: VPS pe upload hoti hain (default ON). Local storage pe NAHI (safe).
   const vpsPhotoEnabled=settings.localPhotoSave!==false; // default ON (renamed semantic)
   if(!rec||!rec.inTime){
@@ -2278,6 +2316,10 @@ function submitAbsentReason(){
   const staff=getStaff().find(s=>s.id===pendingAbsentId);
   const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===targetDate);
   const failMsg=()=>{const m=document.getElementById('absentReqMsg');m.style.display='block';m.textContent='❌ Save failed (storage full). Auto-cleanup done — please press "Submit" again.';};
+  // A reason being answered means this day is genuinely active — clear any old
+  // tombstone (from a past admin Matrix "–" clear) so the record this saves
+  // can't be silently filtered out again on the next cloud merge.
+  removeTombstone(pendingAbsentId,targetDate);
   if(existing){
     // Could be an Absent day OR a Late / Early Out / Half Day that never got a reason
     if(existing.status==='Absent'||!existing.inTime)existing.absentReason=reason;
