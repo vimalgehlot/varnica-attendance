@@ -960,7 +960,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="popup-time" id="wpTime"></div>
     <div class="popup-warning" id="wpMsg"></div>
     <div class="reason-label">Reason *</div>
-    <textarea class="reason-input" id="wpReason" placeholder="Type reason here..."></textarea>
+    <textarea class="reason-input" id="wpReason" placeholder="Type reason here..." oninput="document.getElementById('wpReqMsg').style.display='none'"></textarea>
     <div class="reason-req" id="wpReqMsg" style="display:none">⚠️ Reason is compulsory.</div>
     <button class="btn btn-primary" style="margin-top:12px" onclick="submitWarning()">Submit & Record</button>
     <button class="btn btn-secondary" id="wpSkipBtn" style="margin-top:8px;display:none" onclick="skipWarningReason()">⏭️ Skip for now</button>
@@ -988,7 +988,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="popup-sub" id="absentMsg"></div>
     <div class="popup-warning">Reason is compulsory for attendance records.</div>
     <div class="reason-label">Reason *</div>
-    <textarea class="reason-input" id="absentReason" placeholder="Enter reason..."></textarea>
+    <textarea class="reason-input" id="absentReason" placeholder="Enter reason..." oninput="document.getElementById('absentReqMsg').style.display='none'"></textarea>
     <div class="reason-req" id="absentReqMsg" style="display:none">⚠️ Please enter a reason.</div>
     <button class="btn btn-primary" style="margin-top:12px" onclick="submitAbsentReason()">Submit & Continue</button>
     <button class="btn btn-secondary" id="absentSkipBtn" style="margin-top:8px;display:none" onclick="skipAbsentReason()">⏭️ Skip for now</button>
@@ -1236,16 +1236,13 @@ async function pushAllToCloud(){
       if(json.ok&&json.data&&json.data.att)cloudAtt=json.data.att;
     }catch(e){}
     const localAtt=getAtt();
-    const merged=[...cloudAtt];
-    localAtt.forEach(la=>{
-      const idx=merged.findIndex(ca=>ca.staffId===la.staffId&&ca.date===la.date);
-      if(idx===-1)merged.push(la);
-      else{
-        const laScore=(la.outTime?2:0)+(la.inTime?1:0);
-        const caScore=(merged[idx].outTime?2:0)+(merged[idx].inTime?1:0);
-        if(laScore>=caScore)merged[idx]=la;
-      }
-    });
+    // Same field-aware merge used for live device sync (manual-edit priority,
+    // then whichever record is more complete — punches AND reasons both count).
+    // The old version here only compared in/out punch times and ignored reasons
+    // entirely, so a reason answered locally could be dropped on manual cloud push.
+    // Local is the device pressing "push", so it wins ties; cloud only overrides
+    // when it's strictly more complete (e.g. another device's newer punch/edit).
+    const merged=mergeAttRecords(localAtt,cloudAtt);
     setAtt(merged);
     // Now force-push all three keys immediately (no debounce)
     const push=(key,value)=>fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,key,value})});
@@ -1997,6 +1994,9 @@ async function syncRecentReasonsFromServer(staffId){
   // Pull the last 7 days (not just today) for this staff before the pending-reason
   // check runs. Fixes: an already-answered day being re-asked because this device's
   // local copy hadn't picked up the answer that was saved elsewhere.
+  // IMPORTANT: falls back to /api/restore (the main cloud backup, always present)
+  // if the optional permanent archive endpoint isn't installed on this server —
+  // otherwise this whole check silently does nothing on servers without it.
   const today=toKey(new Date());
   const from=toKey(new Date(Date.now()-7*86400000));
   let serverRecs=null;
@@ -2006,7 +2006,20 @@ async function syncRecentReasonsFromServer(staffId){
     const res=await fetch('/api/attendance-archive?bucket='+TOOL_ID+'&from='+from+'&to='+today+'&staffId='+encodeURIComponent(staffId),{signal:ctrl.signal});
     clearTimeout(timer);
     if(res.ok){const j=await res.json();if(j&&j.ok&&j.records)serverRecs=j.records;}
-  }catch(e){return false;} // offline / timeout — carry on with local data as before
+  }catch(e){} // archive endpoint missing/slow — try the fallback below before giving up
+  if(serverRecs===null){
+    try{
+      const ctrl2=new AbortController();
+      const timer2=setTimeout(()=>ctrl2.abort(),2500);
+      const res2=await fetch('/api/restore?bucket='+TOOL_ID,{signal:ctrl2.signal});
+      clearTimeout(timer2);
+      if(res2.ok){
+        const j2=await res2.json();
+        const cloudAtt=(j2&&j2.ok&&j2.data&&j2.data.att)?j2.data.att:[];
+        serverRecs=cloudAtt.filter(r=>r&&String(r.staffId)===String(staffId)&&r.date>=from&&r.date<=today);
+      }
+    }catch(e){return false;} // truly offline — carry on with local data as before
+  }
   if(!serverRecs||!serverRecs.length)return false;
   try{setAtt(mergeAttRecords(getAtt(),serverRecs));return true;}catch(e){}
   return false;
