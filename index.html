@@ -1135,15 +1135,28 @@ async function uploadPunchPhoto(staffId,dateKey,inout,photoData){
   }catch(e){console.warn('Punch photo upload failed:',e);return false;}
 }
 // After successful record save, fire-and-forget upload; mark record when server confirms
-function backgroundUploadPhoto(staff,dateKey,inout,photoData){
+function backgroundUploadPhoto(staff,dateKey,inout,photoData,attempt){
   if(!photoData)return;
+  attempt=attempt||1;
   uploadPunchPhoto(staff.id,dateKey,inout,photoData).then(ok=>{
-    if(!ok)return;
+    if(!ok){
+      // A weak connection used to lose the photo for good — try again (2s, 8s).
+      if(attempt<3)setTimeout(()=>backgroundUploadPhoto(staff,dateKey,inout,photoData,attempt+1),attempt===1?2000:8000);
+      return;
+    }
     const att=getAtt();
     const r=att.find(a=>a.staffId===staff.id&&a.date===dateKey);
     if(!r)return;
     const flagKey=inout==='in'?'hasInPhoto':'hasOutPhoto';
-    if(!r[flagKey]){r[flagKey]=true;setAtt(att);}
+    if(!r[flagKey]){
+      r[flagKey]=true;
+      if(setAtt(att)){
+        // The record was pushed to the server BEFORE the upload finished, so the
+        // server copy has no photo flag and other devices (admin PC) hide the
+        // camera icon. Push it again now that the flag is true.
+        try{syncRecord(r);}catch(e){}
+      }
+    }
   });
 }
 
@@ -1384,7 +1397,9 @@ function dedupeAtt(arr){
       lateReason:winner.lateReason||loser.lateReason,
       earlyOutReason:winner.earlyOutReason||loser.earlyOutReason,
       absentReason:winner.absentReason||loser.absentReason,
-      reason:winner.reason||loser.reason
+      reason:winner.reason||loser.reason,
+      hasInPhoto:(winner.hasInPhoto||loser.hasInPhoto)===true,
+      hasOutPhoto:(winner.hasOutPhoto||loser.hasOutPhoto)===true
     });
   });
   return order.map(k=>byKey[k]);
@@ -2007,9 +2022,22 @@ function mergeAttRecords(base,incoming){
     // and push in as a duplicate.
     const idx=out.findIndex(o=>String(o.staffId)===String(inc.staffId)&&o.date===inc.date);
     if(idx===-1){out.push(inc);return;}
-    if(better(out[idx],inc))out[idx]={...out[idx],...inc};
+    const old=out[idx];
+    // Whichever copy wins, nothing the other copy knows may be lost: the photo
+    // flags are set a few seconds AFTER a punch (when the upload finishes) and
+    // a reason is typed after the record was first created, so two copies of
+    // the same day often differ ONLY in those fields — and a tie used to keep
+    // one copy and silently drop the other's photo icon / reason.
+    out[idx]=keepKnown(better(old,inc)?{...old,...inc}:{...old},better(old,inc)?old:inc);
   });
   return out;
+}
+function keepKnown(a,b){
+  // a = the record that survives, b = the other copy. Fill a's gaps from b.
+  if(!a||!b)return a;
+  ['hasInPhoto','hasOutPhoto'].forEach(k=>{if(b[k]===true)a[k]=true;});
+  ['reason','lateReason','earlyOutReason','absentReason'].forEach(k=>{if(!a[k]&&b[k])a[k]=b[k];});
+  return a;
 }
 function mergeStaffRecords(base,incoming){
   // Merge two staff arrays by id. The record with the newer updatedAt wins —
@@ -2121,7 +2149,7 @@ async function handlePunch(staff,photo){
   const askPending=()=>{
     if(pendingAbsentId!==staff.id)return;               // something else took over
     if(document.querySelector('.popup-ov.active')){      // a popup is still open
-      if(++tries<25){setTimeout(askPending,1200);return;}
+      if(++tries<150){setTimeout(askPending,1200);return;}
       return;                                            // give up quietly; asked again next punch
     }
     const nameEl=document.getElementById('absentStaffName');
@@ -2206,11 +2234,19 @@ function confirmOutPunch(){
   const vpsPhotoEnabled=settings.localPhotoSave!==false;
   rec.outTime=timeStr;rec.hours=hrs;
   const cls=classifyOutStatus(staff,hrs,earlyMin,timeStr);
-  rec.status=cls.status;
+  // Same rule as the Matrix editor and Recalculate: a clean day that started
+  // after the grace period stays "Late". The OUT punch used to overwrite it
+  // with "Present", so the late reason was saved but the day no longer showed Late.
+  let st=cls.status;
+  if(st==='Present'&&rec.inTime&&timeDiffMin(staff.shiftIn||'09:00',rec.inTime)>settings.grace)st='Late';
+  rec.status=st;
   warningType=cls.warningType;
   if(!setAtt(att))return;
   const latest=getAtt().find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(vpsPhotoEnabled&&photo)backgroundUploadPhoto(staff,todayKey,'out',photo);
+  // The OUT punch must reach the server even if the reason popup is never
+  // finished; the reason is synced again when it is submitted.
+  if(warningType)syncRecord(latest);
   if(warningType){pendingPunchData={staff,punchType:'OUT',timeStr,warningType};showWarningPopup(staff,'OUT',timeStr,warningType);}
   else{syncRecord(latest);showWelcomePopup(staff,'OUT',timeStr,latest);renderTodayLog();updateDashStats();}
 }
@@ -2237,12 +2273,22 @@ function pushToArchive(rec){
 let archiveSyncInProgress=false;
 async function processArchiveQueue(){
   if(archiveSyncInProgress)return;
-  let q;try{q=JSON.parse(localStorage.getItem('vj_archiveQueue')||'[]');}catch(e){q=[];}
-  if(!q.length)return;
   archiveSyncInProgress=true;
   try{
-    const res=await fetch('/api/attendance-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,records:q})});
-    if(res.ok)localStorage.setItem('vj_archiveQueue','[]'); // all confirmed — safe to clear
+    // Loop, because new records (e.g. the reason typed a few seconds after the
+    // punch) can be queued while a request is still in flight. The old code
+    // cleared the WHOLE queue when the first request finished, silently
+    // throwing away anything queued meanwhile — so the reason never reached
+    // the server and other devices showed it blank.
+    for(let round=0;round<6;round++){
+      let q;try{q=JSON.parse(localStorage.getItem('vj_archiveQueue')||'[]');}catch(e){q=[];}
+      if(!q.length)break;
+      const res=await fetch('/api/attendance-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,records:q})});
+      if(!res.ok)break;
+      const sent=new Set(q.map(x=>JSON.stringify(x)));
+      let cur;try{cur=JSON.parse(localStorage.getItem('vj_archiveQueue')||'[]');}catch(e){cur=[];}
+      localStorage.setItem('vj_archiveQueue',JSON.stringify(cur.filter(x=>!sent.has(JSON.stringify(x)))));   // drop only what was really sent
+    }
   }catch(e){/* stays queued, retried on next connection check */}
   archiveSyncInProgress=false;
 }
@@ -2308,7 +2354,7 @@ function skipWarningReason(){
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(rec){
     if(warningType==='late'){rec.status='Late';rec.lateReason='(skipped)';}
-    else{rec.status=classifyOutStatus(staff,rec.hours||0,0,rec.outTime||'').status;rec.earlyOutReason='(skipped)';}
+    else{rec.earlyOutReason='(skipped)';}
     rec.reason='(skipped)'; // kept for old-record compatibility, not used for display anymore
     if(setAtt(att))syncRecord(rec);
   }
@@ -2324,7 +2370,7 @@ function submitWarning(){
   const rec=att.find(a=>a.staffId===staff.id&&a.date===todayKey);
   if(rec){
     if(warningType==='late'){rec.status='Late';rec.lateReason=reason;}
-    else{rec.earlyOutReason=reason;rec.status=classifyOutStatus(staff,rec.hours||0,0,rec.outTime||'').status;}
+    else{rec.earlyOutReason=reason;}   // status was already decided at OUT punch — recomputing it here (with 0 min early) turned Early Out into Present
     rec.reason=reason; // kept for old-record compatibility, not used for display anymore
     // Same reason as in submitAbsentReason: a reason added to a hand-set record
     // must count as a newer edit, or the merge keeps the reason-less copy.
@@ -2347,7 +2393,7 @@ function skipAbsentReason(){
   if(existing){existing.absentReason='(skipped)';setAtt(att);}
   else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:targetDate,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:'(skipped)'});setAtt(att);}
   closePopup('absentPopup');
-  syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:yesterday,status:'Absent',absentReason:'(skipped)',hours:0});
+  syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:targetDate,status:'Absent',absentReason:'(skipped)',hours:0});
   // Punch was already recorded in handlePunch — do NOT punch again here.
   pendingAbsentId=null;pendingPunchData=null;pendingReasonDate=null;
 }
