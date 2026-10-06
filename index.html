@@ -838,7 +838,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div class="set-row"><div><div class="set-lbl">Late Grace Period</div><div class="set-sub">Minutes after shift start = Present</div></div><div class="set-val" onclick="editSetting('grace')" id="graceVal">10 min</div></div>
       <div class="set-row"><div><div class="set-lbl">Half Day Threshold</div><div class="set-sub">Auto: half of each staff's own shift hours. This value is only a fallback when shift timing is missing.</div></div><div class="set-val" onclick="editSetting('halfDay')" id="halfDayVal">4 hrs</div></div>
       <div class="set-row"><div><div class="set-lbl">Early Out Threshold</div><div class="set-sub">Min before shift end = Early Out</div></div><div class="set-val" onclick="editSetting('earlyOut')" id="earlyOutVal">15 min</div></div>
-      <div class="set-row"><div><div class="set-lbl">Absent Threshold (%)</div><div class="set-sub">Worked hours below this % of shift = Absent, even if punched</div></div><div class="set-val" onclick="editSetting('absentPct')" id="absentPctVal">50%</div></div>
+      <div class="set-row"><div><div class="set-lbl">Absent Threshold (%)</div><div class="set-sub">Worked hours below this % of shift = Absent, even if punched</div></div><div class="set-val" onclick="editSetting('absentPct')" id="absentPctVal">30%</div></div>
       <div class="set-row"><div><div class="set-lbl">Half Day Cutoff (%)</div><div class="set-sub">Below this % (but above Absent %) = Half Day, half pay. Between this and Full Day % = Early Out, full pay + reason. Default = same as Full Day % (no Early-Out band).</div></div><div class="set-val" onclick="editSetting('halfDayPct')" id="halfDayPctVal">90%</div></div>
       <div class="set-row"><div><div class="set-lbl">Full Day Threshold (%)</div><div class="set-sub">At/above this % (and on time) = full clean Present</div></div><div class="set-val" onclick="editSetting('fullDayPct')" id="fullDayPctVal">90%</div></div>
       <div style="margin:10px 0 2px;padding:10px 12px;background:rgba(0,0,0,0.03);border-radius:10px" id="pctBandSummary"></div>
@@ -1405,7 +1405,7 @@ function dedupeAtt(arr){
   return order.map(k=>byKey[k]);
 }
 const setAtt=v=>{const deduped=dedupeAtt(Array.isArray(v)?v:[]);if(!DB.set('att',deduped)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
-const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true,singlePunchMode:true,reasonCompulsory:true,staffPortalSalary:true,absentPct:50,fullDayPct:90,halfDayPct:90},DB.get('settings')||{});
+const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true,singlePunchMode:true,reasonCompulsory:true,staffPortalSalary:true,absentPct:30,fullDayPct:90,halfDayPct:70},DB.get('settings')||{});
 const setSettings=v=>{if(!DB.set('settings',v)){showToast('❌ Settings save FAIL');return false;}return true;};
 const getPending=()=>DB.get('pending')||[];
 const setPending=v=>DB.set('pending',v);
@@ -2314,8 +2314,10 @@ function showWelcomePopup(staff,type,time,rec){
   }
   document.getElementById('wTime').textContent=time;
   let badges='<span class="punch-badge '+(type==='IN'?'badge-in':'badge-out')+'">'+type+'</span>';
-  if(rec&&rec.status==='Late')badges+='<span class="punch-badge badge-late">LATE</span>';
-  if(rec&&rec.status==='Overtime')badges+='<span class="punch-badge badge-ot">OVERTIME</span>';
+  const _wf=rec?getDayFlags(rec,staff):{};
+  if(_wf.isLate)badges+='<span class="punch-badge badge-late">LATE</span>';
+  if(_wf.isEarlyOut)badges+='<span class="punch-badge badge-late">EARLY OUT</span>';
+  if(_wf.isOvertime)badges+='<span class="punch-badge badge-ot">OVERTIME</span>';
   if(rec&&rec.status==='Half Day')badges+='<span class="punch-badge badge-late">HALF DAY</span>';
   document.getElementById('wBadges').innerHTML=badges;
   const si=document.getElementById('syncIndicator');
@@ -2412,8 +2414,8 @@ function submitAbsentReason(){
   if(existing){
     // Could be an Absent day OR a Late / Early Out / Half Day that never got a reason
     if(existing.status==='Absent'||!existing.inTime)existing.absentReason=reason;
-    else if(existing.status==='Late')existing.lateReason=reason;
-    else if(existing.status==='Early Out')existing.earlyOutReason=reason;
+    else if(getDayFlags(existing,staff).isLate)existing.lateReason=reason;
+    else if(getDayFlags(existing,staff).isEarlyOut)existing.earlyOutReason=reason;
     else existing.reason=reason; // Half Day / other — no dedicated field yet
     // Adding a reason to a hand-set record is itself a newer edit. Without
     // bumping manualAt the merge saw two manual copies with identical
@@ -2591,7 +2593,7 @@ function loadSettingsUI(){
   document.getElementById('graceVal').textContent=s.grace+' min';
   document.getElementById('halfDayVal').textContent=s.halfDay+' hrs';
   document.getElementById('earlyOutVal').textContent=s.earlyOut+' min';
-  document.getElementById('absentPctVal').textContent=(typeof s.absentPct==='number'?s.absentPct:50)+'%';
+  document.getElementById('absentPctVal').textContent=(typeof s.absentPct==='number'?s.absentPct:30)+'%';
   document.getElementById('halfDayPctVal').textContent=(typeof s.halfDayPct==='number'?s.halfDayPct:(typeof s.fullDayPct==='number'?s.fullDayPct:90))+'%';
   document.getElementById('fullDayPctVal').textContent=(typeof s.fullDayPct==='number'?s.fullDayPct:90)+'%';
   renderPctBandSummary(s);
@@ -2607,7 +2609,7 @@ function renderPctBandSummary(s){
   // built from whatever the three % settings currently are — so it's never
   // ambiguous what range each status actually covers.
   const el=document.getElementById('pctBandSummary');if(!el)return;
-  const absent=(typeof s.absentPct==='number'?s.absentPct:50);
+  const absent=(typeof s.absentPct==='number'?s.absentPct:30);
   const full=(typeof s.fullDayPct==='number'?s.fullDayPct:90);
   let half=(typeof s.halfDayPct==='number'?s.halfDayPct:full);
   if(half>full)half=full;
@@ -2856,7 +2858,7 @@ function generateReport(){
   const prevDates=getDatesInRange(toKey(prevFrom),toKey(prevTo));
   const target=sf?staff.filter(s=>s.id===sf):staff;const summaries=[];
   target.forEach(s=>{
-    let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0,extraDays=0,grossEarned=0,extraPay=0,unpaidOffDays=0,paidOffDays=0;const rows=[];
+    let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,flaggedDays=0,workDays=0,extraDays=0,grossEarned=0,extraPay=0,unpaidOffDays=0,paidOffDays=0;const rows=[];
     dates.forEach(d=>{
       const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
@@ -2878,7 +2880,7 @@ function generateReport(){
             extraDays++;
             const dayPay=Math.round(dailyRate);
             extraPay+=dayPay;grossEarned+=dailyRate;
-            rows.push({date:d,staffId:s.id,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked, 2 days pay)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+            rows.push({date:d,staffId:s.id,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked, 2 days pay)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
           }else{
             rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});
           }
@@ -2888,13 +2890,15 @@ function generateReport(){
       workDays++;
       if(!recIsAttended(rec)){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',manual:rec?.manual===true,inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
       else{
-        if(rec.status==='Late')late++;
+        const fl=getDayFlags(rec,s);
+        if(fl.isLate)late++;
         if(rec.status==='Half Day')halfDay++;
-        if(rec.status==='Overtime')overtime++;
-        if(rec.status==='Early Out')earlyOut++;
+        if(fl.isOvertime)overtime++;
+        if(fl.isEarlyOut)earlyOut++;
+        if(rec.status!=='Absent'&&rec.status!=='Half Day'&&(fl.isLate||fl.isOvertime||fl.isEarlyOut))flaggedDays++;
         if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;
         grossEarned+=(rec.status==='Half Day')?dailyRate*0.5:dailyRate;
-        rows.push({date:d,staffId:s.id,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:reasonSummary(rec),manual:rec.manual===true,inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+        rows.push({date:d,staffId:s.id,status:rec.status||'Present',...dayFlagFields(rec,s),inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec),manual:rec.manual===true,inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
       }
     });
     const settings=getSettings();
@@ -2913,7 +2917,7 @@ function generateReport(){
     const isOverride=!!override;
     if(isOverride)netPay=Math.round(override.amount);
     const prevPct=computeQuickPct(s.id,prevDates,att);
-    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,workDays,extraDays,extraPay,unpaidOffDays,paidOffDays,totalPayingDays,refDailyRate,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,prevPct,isOverride});
+    summaries.push({staff:s,present,absent,late,halfDay,overtime,earlyOut,flaggedDays,workDays,extraDays,extraPay,unpaidOffDays,paidOffDays,totalPayingDays,refDailyRate,pct:workDays>0?Math.round(present/workDays*100):0,rows,payableDays,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,prevPct,isOverride});
   });
   lastReportData=summaries;
   lastDayWiseData=buildDayWiseData(dates,target,att);
@@ -2939,14 +2943,14 @@ function buildDayWiseData(dates,targetStaff,att){
     const rows=targetStaff.map(s=>{
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
       if(isWO||isHol){
-        if(recIsAttended(rec))return{staff:s,status:'Extra Day',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
+        if(recIsAttended(rec))return{staff:s,status:'Extra Day',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
         return{staff:s,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''};
       }
       if(!recIsAttended(rec))return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false};
-      return{staff:s,status:rec.status||'Present',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:rec.hours?rec.hours.toFixed(1)+' hrs':'-',reason:reasonSummary(rec),inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
+      return{staff:s,status:rec.status||'Present',...dayFlagFields(rec,s),inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec),inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
     });
     let present=0,absent=0,late=0,halfDay=0,earlyOut=0,overtime=0,extraDays=0;
-    if(!isWO&&!isHol){rows.forEach(r=>{if(r.status==='Absent')absent++;else{if(r.status==='Late')late++;if(r.status==='Half Day')halfDay++;if(r.status==='Overtime')overtime++;if(r.status==='Early Out')earlyOut++;if(r.status!=='Half Day')present++;}});}
+    if(!isWO&&!isHol){rows.forEach(r=>{if(r.status==='Absent')absent++;else{if(r.isLate)late++;if(r.status==='Half Day')halfDay++;if(r.isOvertime)overtime++;if(r.isEarlyOut)earlyOut++;if(r.status!=='Half Day')present++;}});}
     else{rows.forEach(r=>{if(r.status==='Extra Day')extraDays++;});}
     const totalStaff=targetStaff.length;
     return{date:d,isWO,isHol,rows,present,absent,late,halfDay,earlyOut,overtime,extraDays,totalStaff,pct:totalStaff>0?Math.round(present/totalStaff*100):0};
@@ -2985,7 +2989,7 @@ function quickFilterReport(range){
 }
 function escHtml(s){return(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtDateLabel(d){const dt=new Date(d+'T00:00:00');return dt.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short'});}
-function statusColor(status){return status==='Absent'?'var(--red)':(status==='Late'||status==='Early Out')?'var(--orange)':status==='Extra Day'?'#b8955a':(status==='Present'||status==='Overtime')?'var(--green)':'var(--text2)';}
+function statusColor(status){status=String(status||'').split(' + ')[0];return status==='Absent'?'var(--red)':(status==='Late'||status==='Early Out')?'var(--orange)':status==='Extra Day'?'#b8955a':(status==='Present'||status==='Overtime')?'var(--green)':'var(--text2)';}
 function renderHighlights(summaries){
   const el=document.getElementById('reportHighlights');
   const flagged=summaries.filter(s=>(s.workDays>0&&s.absent/s.workDays>0.2)||s.late>=3||s.earlyOut>=3);
@@ -3500,7 +3504,7 @@ function renderReportChart(){
   const bars=lastReportData.slice().sort((a,b)=>b.pct-a.pct).map(s=>{
     const c=s.pct>=85?'#4A8C5C':s.pct>=60?'#C47A20':'#C44B35';
     const den=Math.max(1,s.workDays);
-    const onT=Math.max(0,s.present-s.late-s.overtime-s.earlyOut);
+    const onT=Math.max(0,s.present-(s.flaggedDays||0));
     const seg=[
       {v:onT,c:'#4A8C5C',n:'On time'},
       {v:s.late,c:'#C47A20',n:'Late'},
@@ -3509,7 +3513,8 @@ function renderReportChart(){
       {v:s.halfDay,c:'#B8955A',n:'Half Day'},
       {v:s.absent,c:'#C44B35',n:'Absent'}
     ].filter(x=>x.v>0);
-    const fills=seg.map(x=>'<div style="width:'+(x.v/den*100)+'%;background:'+x.c+'" title="'+x.n+': '+x.v+'"></div>').join('');
+    const _den3=Math.max(den,seg.reduce((a,x)=>a+x.v,0));
+    const fills=seg.map(x=>'<div style="width:'+(x.v/_den3*100)+'%;background:'+x.c+'" title="'+x.n+': '+x.v+'"></div>').join('');
     const detail=[s.present?s.present+'P':'',s.late?s.late+'L':'',s.overtime?s.overtime+'OT':'',s.earlyOut?s.earlyOut+'E':'',s.halfDay?s.halfDay+'H':'',s.absent?s.absent+'A':''].filter(Boolean).join(' · ');
     return '<div onclick="openStaffFromChart(\''+s.staff.id+'\')" style="margin-bottom:9px;cursor:pointer">'+
       '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
@@ -3654,7 +3659,7 @@ function renderStaffWiseTable(summaries){
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${escHtml(s.staff.name)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div>${reasonChip}${trendHtml}</div>
       <span class="pct-badge ${pctClass}">${s.pct}%</span>
     </summary>
-    <div class="report-row-body">${payrollHtml}${actionsHtml}${renderMiniTable(s.rows.map(r=>({label:r.date,mono:true,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto,staffId:s.staff.id,dateKey:r.date,hasInPhoto:r.hasInPhoto,hasOutPhoto:r.hasOutPhoto})),'Date')}</div></details>`;
+    <div class="report-row-body">${payrollHtml}${actionsHtml}${renderMiniTable(s.rows.map(r=>({label:r.date,mono:true,status:r.statusText||r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto,staffId:s.staff.id,dateKey:r.date,hasInPhoto:r.hasInPhoto,hasOutPhoto:r.hasOutPhoto})),'Date')}</div></details>`;
   }).join('');
 }
 function renderDayWiseTable(dayData){
@@ -3662,11 +3667,11 @@ function renderDayWiseTable(dayData){
   if(!dayData||!dayData.length){el.innerHTML='<div class="empty-state"><p>No data</p></div>';return;}
   el.innerHTML=dayData.map(d=>{
     if(d.isWO||d.isHol){
-      return `<details class="report-row report-row-off"><summary><span class="report-row-chevron">▶</span><div style="flex:1"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${d.isHol?'🎉 Holiday':'🏖️ Week Off'}</div></div></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto,staffId:r.staff.id,dateKey:d.date,hasInPhoto:r.hasInPhoto,hasOutPhoto:r.hasOutPhoto})),'Staff')}</div></details>`;
+      return `<details class="report-row report-row-off"><summary><span class="report-row-chevron">▶</span><div style="flex:1"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${d.isHol?'🎉 Holiday':'🏖️ Week Off'}</div></div></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.statusText||r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto,staffId:r.staff.id,dateKey:d.date,hasInPhoto:r.hasInPhoto,hasOutPhoto:r.hasOutPhoto})),'Staff')}</div></details>`;
     }
     const pctClass=d.pct>=90?'pct-good':d.pct>=75?'pct-mid':'pct-bad';
     const badges=['✅ '+d.present,'❌ '+d.absent,d.late?'⏰ '+d.late:'',d.earlyOut?'🌅 '+d.earlyOut:'',d.halfDay?'🔶 '+d.halfDay:'',d.overtime?'🔵 '+d.overtime:''].filter(Boolean).join(' · ');
-    return `<details class="report-row"><summary><span class="report-row-chevron">▶</span><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div></div><span class="pct-badge ${pctClass}">${d.pct}%</span></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto,staffId:r.staff.id,dateKey:d.date,hasInPhoto:r.hasInPhoto,hasOutPhoto:r.hasOutPhoto})),'Staff')}</div></details>`;
+    return `<details class="report-row"><summary><span class="report-row-chevron">▶</span><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${fmtDateLabel(d.date)}</div><div style="font-size:10.5px;color:var(--text3)">${badges}</div></div><span class="pct-badge ${pctClass}">${d.pct}%</span></summary><div class="report-row-body">${renderMiniTable(d.rows.map(r=>({label:r.staff.name,mono:false,status:r.statusText||r.status,inTime:r.inTime,outTime:r.outTime,hours:r.hours,reason:r.reason,inPhoto:r.inPhoto,outPhoto:r.outPhoto,staffId:r.staff.id,dateKey:d.date,hasInPhoto:r.hasInPhoto,hasOutPhoto:r.hasOutPhoto})),'Staff')}</div></details>`;
   }).join('');
 }
 let _photoViewCache=[];
@@ -3689,7 +3694,7 @@ function showVpsPhoto(staffId,dateKey,inout,stamp){
 }
 function renderMiniTable(rows,firstColLabel){
   _photoViewCache=[];
-  return `<table class="mini-table"><thead><tr><th>${firstColLabel}</th><th>Status</th><th>IN</th><th>OUT</th><th>Hrs</th><th>Reason</th></tr></thead><tbody>${rows.map(r=>{
+  return `<table class="mini-table"><thead><tr><th>${firstColLabel}</th><th>Status</th><th>IN</th><th>OUT</th><th>Shift Hours</th><th>Remarks</th></tr></thead><tbody>${rows.map(r=>{
     // Priority: local base64 (legacy) OR VPS flag (new)
     let inCell=r.inTime;
     if(r.inPhoto){const inIdx=stashPhoto(r.inPhoto);inCell+=` <span class="photo-ic" onclick="viewPunchPhoto(${inIdx})">📷</span>`;}
@@ -3715,7 +3720,7 @@ function exportPayrollCSV(){
   ]);});
   dlCSV(rows,'varnica_payroll.csv');
 }
-function exportReportCSV(){if(!lastReportData.length){showToast('Generate report first');return;}const rows=[['Staff','Role','Date','Status','IN','OUT','Hours','Reason']];lastReportData.forEach(s=>{s.rows.forEach(r=>{rows.push([s.staff.name,s.staff.role||'',r.date,r.status,r.inTime,r.outTime,r.hours,r.reason]);});});dlCSV(rows,'varnica_report.csv');}
+function exportReportCSV(){if(!lastReportData.length){showToast('Generate report first');return;}const rows=[['Staff','Role','Date','Status','Late','Overtime','Early Out','IN','OUT','Shift Hours','Remarks']];lastReportData.forEach(s=>{s.rows.forEach(r=>{rows.push([s.staff.name,s.staff.role||'',r.date,r.statusText||r.status,r.isLate?1:0,r.isOvertime?1:0,r.isEarlyOut?1:0,r.inTime,r.outTime,r.hours,r.reason]);});});dlCSV(rows,'varnica_report.csv');}
 
 // ══════════════════════════════════════════════
 // PAYSLIP PDF (client-side, jsPDF)
@@ -4064,7 +4069,7 @@ function buildReportHTML(){
     const days=s.rows.map(r=>{
       const reason=r.reason||'';
       return '<div class="d"><div class="dl"><span class="dt">'+escHtml(fmtDateLabel(r.date))+'</span>'+
-        '<span class="ds" style="color:'+stColor(r.status)+'">'+escHtml(r.status)+'</span></div>'+
+        '<span class="ds" style="color:'+stColor(r.status)+'">'+escHtml(r.statusText||r.status)+'</span></div>'+
         '<div class="dr"><span>IN '+escHtml(r.inTime||'–')+'</span><span>OUT '+escHtml(r.outTime||'–')+'</span><span>'+escHtml(r.hours||'–')+'</span></div>'+
         (reason?'<div class="dz">💬 '+escHtml(reason)+'</div>':'')+
       '</div>';
@@ -4180,9 +4185,11 @@ function renderTodayDonut(){
   const el=document.getElementById('chartToday');if(!el)return;
   const staff=getStaff();if(!staff.length){el.innerHTML=chartEmpty('No staff added yet');return;}
   const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today);
-  const late=att.filter(a=>a.status==='Late').length;
+  const _stf=getStaff();
+  const _isL=a=>getDayFlags(a,_stf.find(x=>x.id===a.staffId)).isLate;
+  const late=att.filter(a=>a.status!=='Half Day'&&_isL(a)).length;
   const half=att.filter(a=>a.status==='Half Day').length;
-  const onTime=att.filter(a=>recIsAttended(a)&&a.status!=='Late'&&a.status!=='Half Day'&&a.status!=='Absent').length;
+  const onTime=att.filter(a=>recIsAttended(a)&&!_isL(a)&&a.status!=='Half Day'&&a.status!=='Absent').length;
   const absent=Math.max(0,staff.length-onTime-late-half);
   const segs=[{n:'On time',v:onTime,c:'#4A8C5C'},{n:'Late',v:late,c:'#C47A20'},{n:'Half Day',v:half,c:'#D4B483'},{n:'Absent',v:absent,c:'#C44B35'}].filter(s=>s.v>0);
   const total=staff.length;
@@ -4214,18 +4221,19 @@ function renderStaffRankChart(){
   const dates=getDatesInRange(from,to).filter(d=>!isWeekOff(new Date(d+'T00:00:00'))&&!isHoliday(d));
   if(!dates.length){el.innerHTML=chartEmpty('No working days yet this month');return;}
   const rows=staff.map(s=>{
-    let onTime=0,late=0,ot=0,early=0,half=0,absent=0;
+    let onTime=0,late=0,ot=0,early=0,half=0,absent=0,flagged=0;
     dates.forEach(d=>{
       const r=att.find(a=>a.staffId===s.id&&a.date===d);
       if(!recIsAttended(r)){absent++;return;}
-      if(r.status==='Late')late++;
-      else if(r.status==='Overtime')ot++;
-      else if(r.status==='Early Out')early++;
-      else if(r.status==='Half Day')half++;
-      else if(r.status==='Absent')absent++;
-      else onTime++;
+      if(r.status==='Half Day'){half++;return;}
+      if(r.status==='Absent'){absent++;return;}
+      const fl=getDayFlags(r,s);
+      if(fl.isLate)late++;
+      if(fl.isOvertime)ot++;
+      if(fl.isEarlyOut)early++;
+      if(fl.isLate||fl.isOvertime||fl.isEarlyOut)flagged++;else onTime++;
     });
-    const present=onTime+late+ot+early;
+    const present=onTime+flagged;
     return{id:s.id,name:s.name,onTime,late,ot,early,half,absent,present,pct:Math.round(present/dates.length*100)};
   }).sort((a,b)=>b.pct-a.pct);
   const legend='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:11px;font-size:10.5px;color:var(--text2)">'+
@@ -4268,7 +4276,8 @@ function renderStaffRankChart(){
       {v:r.half,c:'#B8955A',n:'Half Day'},
       {v:r.absent,c:'#C44B35',n:'Absent'}
     ].filter(x=>x.v>0);
-    const fills=segs.map(x=>'<div style="width:'+(x.v/den*100)+'%;background:'+x.c+'" title="'+x.n+': '+x.v+'"></div>').join('');
+    const _den2=Math.max(den,segs.reduce((a,x)=>a+x.v,0));
+    const fills=segs.map(x=>'<div style="width:'+(x.v/_den2*100)+'%;background:'+x.c+'" title="'+x.n+': '+x.v+'"></div>').join('');
     const detail=[r.onTime?r.onTime+'P':'',r.late?r.late+'L':'',r.ot?r.ot+'OT':'',r.early?r.early+'E':'',r.half?r.half+'H':'',r.absent?r.absent+'A':''].filter(Boolean).join(' · ');
     const sep=(!_rankExpanded&&rows.length>9&&i===5)?gapNote:'';
     return sep+'<div onclick="goToStaffReport('+JSON.stringify(r.name).replace(/"/g,'&quot;')+')" style="margin-bottom:9px;cursor:pointer">'+
@@ -4286,7 +4295,7 @@ function renderDashCharts(){
   try{renderTodayDonut();}catch(e){console.warn('donut chart',e);}
   try{renderStaffRankChart();}catch(e){console.warn('rank chart',e);}
 }
-function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staff=getStaff(),present=att.filter(a=>a.status!=='Absent').length,late=att.filter(a=>a.status==='Late').length;document.getElementById('sPresent').textContent=present;document.getElementById('sAbsent').textContent=Math.max(0,staff.length-present);document.getElementById('sLate').textContent=late;document.getElementById('sTotal').textContent=staff.length;renderDashCharts();}
+function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staff=getStaff(),present=att.filter(a=>a.status!=='Absent').length,late=att.filter(a=>getDayFlags(a,staff.find(x=>x.id===a.staffId)).isLate).length;document.getElementById('sPresent').textContent=present;document.getElementById('sAbsent').textContent=Math.max(0,staff.length-present);document.getElementById('sLate').textContent=late;document.getElementById('sTotal').textContent=staff.length;renderDashCharts();}
 
 // ══════════════════════════════════════════════
 // NAVIGATION
@@ -4324,7 +4333,7 @@ function closePopup(id){
 function resetStatusCard(){const c=document.getElementById('statusCard');c.className='status-card';c.innerHTML='<div class="status-icon">👤</div><div style="font-size:14px;color:var(--text2)">Waiting for face scan...</div><div style="font-size:11px;color:var(--text3)">Look directly at the camera</div>';}
 
 // EXPORT
-function exportAllCSV(){const att=getAtt();if(!att.length){showToast('No data');return;}dlCSV([['Date','Staff','IN','OUT','Status','Hours','Late Reason','Early Out Reason','Absent Reason'],...att.map(a=>[a.date,a.staffName,a.inTime||'',a.outTime||'',a.status,a.hours||0,a.lateReason||'',a.earlyOutReason||'',a.absentReason||''])],'varnica_attendance.csv');}
+function exportAllCSV(){const att=getAtt();if(!att.length){showToast('No data');return;}const _sm={};getStaff().forEach(x=>{_sm[x.id]=x;});dlCSV([['Date','Staff','IN','OUT','Status','Late','Overtime','Early Out','Shift Hours','Late Reason','Early Out Reason','Absent Reason'],...att.map(a=>{const f=getDayFlags(a,_sm[a.staffId]);return[a.date,a.staffName,a.inTime||'',a.outTime||'',buildStatusText(a,f),f.isLate?1:0,f.isOvertime?1:0,f.isEarlyOut?1:0,fmtWorked(a),a.lateReason||'',a.earlyOutReason||'',a.absentReason||''];})],'varnica_attendance.csv');}
 function exportStaffCSV(){const s=getStaff();if(!s.length){showToast('No staff');return;}dlCSV([['Name','Role','Shift In','Shift Out','Face'],...s.map(x=>[x.name,x.role||'',x.shiftIn,x.shiftOut,x.descriptors?.length?'Yes':'No'])],'varnica_staff.csv');}
 function dlCSV(rows,name){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=name;a.click();showToast('Downloaded!');}
 
@@ -4348,7 +4357,7 @@ function findPendingReasonDay(staff){
       if(rec&&(rec.absentReason||rec.reason))continue;
       return{date:key,status:'Absent'};
     }
-    const needs=(rec.status==='Late'||rec.status==='Early Out'||rec.status==='Half Day');
+    const _pf=getDayFlags(rec,staff);const needs=(_pf.isLate||_pf.isEarlyOut||rec.status==='Half Day');
     if(needs&&!rec.reason&&!rec.lateReason&&!rec.earlyOutReason&&!rec.absentReason)return{date:key,status:rec.status};
   }
   return null;
@@ -4379,6 +4388,77 @@ function recIsAttended(rec){
   if(!rec)return false;
   if(rec.inTime)return true;
   return ['Present','Late','Half Day','Early Out','Overtime'].indexOf(rec.status)>=0;
+}
+// ══════════════════════════════════════════════
+// DAY FLAGS — Late / Overtime / Early Out are counted INDEPENDENTLY.
+// Flags come ONLY from punch times vs shift timing (and an admin's hand-set status
+// on a record that has no punch times). A remark/reason NEVER changes any flag.
+// "status" is kept only as the primary display/pay label (Present, Half Day, ...).
+// ══════════════════════════════════════════════
+function fmtHM(mins){
+  if(mins===null||mins===undefined||isNaN(mins)||mins<=0)return'-';
+  const t=Math.round(mins);return Math.floor(t/60)+'h '+(t%60)+'m';
+}
+function workedMinutes(rec){
+  if(!rec)return null;
+  if(rec.inTime&&rec.outTime){
+    let m=timeDiffMin(rec.inTime,rec.outTime);if(m<0)m+=24*60;
+    if(m>0&&m<=20*60)return m;
+  }
+  if(rec.hours)return Math.round(rec.hours*60);
+  return null;
+}
+function fmtWorked(rec){return fmtHM(workedMinutes(rec));}
+function getDayFlags(rec,staff){
+  const f={isLate:false,isOvertime:false,isEarlyOut:false,isHalfDay:false};
+  if(!rec||!recIsAttended(rec))return f;
+  const st=rec.status;
+  const settings=getSettings();
+  const shiftIn=(staff&&staff.shiftIn)||'09:00',shiftOut=(staff&&staff.shiftOut)||'18:00';
+  const manual=rec.manual===true;
+  const statusLate=(st==='Late'),statusOT=(st==='Overtime'),statusEO=(st==='Early Out'),statusHalf=(st==='Half Day');
+  // LATE — decided by IN time alone
+  if(rec.inTime)f.isLate=timeDiffMin(shiftIn,rec.inTime)>settings.grace;
+  else f.isLate=statusLate;
+  // OT / EARLY OUT / HALF DAY — decided by OUT time and hours worked
+  const hrs=(rec.inTime&&rec.outTime)?safeHours(rec.inTime,rec.outTime):null;
+  if(hrs!==null&&staff){
+    const earlyMin=timeDiffMin(rec.outTime,shiftOut);
+    const c=classifyOutStatus(staff,hrs,earlyMin,rec.outTime);
+    f.isHalfDay=(c.status==='Half Day');
+    if(!f.isHalfDay&&c.status!=='Absent'){
+      f.isEarlyOut=(c.status==='Early Out')&&earlyMin>0;
+      f.isOvertime=timeDiffMin(shiftOut,rec.outTime)>30;
+    }
+  }else{
+    f.isHalfDay=statusHalf;f.isOvertime=statusOT;f.isEarlyOut=statusEO;
+  }
+  // An admin's hand-set status is respected on top of what the times say
+  if(manual){
+    if(statusLate)f.isLate=true;
+    if(statusOT&&!f.isHalfDay)f.isOvertime=true;
+    if(statusEO&&!f.isHalfDay)f.isEarlyOut=true;
+    if(statusHalf)f.isHalfDay=true;
+  }
+  if(statusHalf)f.isHalfDay=true;
+  if(f.isHalfDay){f.isOvertime=false;f.isEarlyOut=false;}
+  return f;
+}
+function buildStatusText(rec,fl){
+  // Display text only — e.g. "Late + Overtime". Never used for counting.
+  if(!rec)return'';
+  const base=rec.status||'Present';
+  if(base==='Absent'||base==='Leave')return base;
+  const parts=[];
+  if(fl.isHalfDay)parts.push('Half Day');
+  if(fl.isLate)parts.push('Late');
+  if(fl.isEarlyOut)parts.push('Early Out');
+  if(fl.isOvertime)parts.push('Overtime');
+  return parts.length?parts.join(' + '):base;
+}
+function dayFlagFields(rec,staff){
+  const fl=getDayFlags(rec,staff);
+  return{statusText:buildStatusText(rec,fl),isLate:fl.isLate,isOvertime:fl.isOvertime,isEarlyOut:fl.isEarlyOut};
 }
 function classifyOutStatus(staff,hrs,earlyMin,timeStr){
   // Single place that decides the OUT-punch status, used by every path so
