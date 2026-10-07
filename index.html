@@ -678,6 +678,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="staff-search-sticky"><input type="text" id="staffSearch" placeholder="🔍 Search staff by name..." oninput="renderStaffList()"></div>
     <button class="btn btn-primary" onclick="openAddStaff()">+ Add New Staff Member</button>
     <div class="card"><div class="sec-title">👥 Staff List (<span id="staffCount">0</span>)</div><div id="staffList"></div></div>
+    <div class="card" id="leftStaffCard" style="display:none"><div class="sec-title">📤 Left Staff (<span id="leftStaffCount">0</span>)</div><div id="leftStaffList"></div></div>
   </div>
 
   <!-- REPORT -->
@@ -911,6 +912,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     </div>
     <div class="ig"><label class="il">ESI Applicable?</label><select class="if" id="sESI"><option value="1">Yes</option><option value="0">No</option></select></div>
     <div class="ig"><label class="il">Date of Birth 🎂 (optional)</label><input type="date" class="if" id="sDob"></div>
+    <div class="ig"><label class="il">Joining Date 📅 (blank = pehli punch se)</label><input type="date" class="if" id="sJoin"></div>
     <label class="il">Face Registration (3-5 photos)</label>
     <div class="reg-cam-wrap"><video id="regVideo" autoplay muted playsinline></video><div class="reg-guide-ov"><div class="reg-guide"></div></div></div>
     <div class="photo-thumbs" id="photoThumbs"></div>
@@ -1601,7 +1603,7 @@ let _confirmId=null,_confirmCount=0;
 function resetMatchConfirm(){_confirmId=null;_confirmCount=0;}
 function euclidDist(a,b){let s=0;for(let i=0;i<a.length;i++){const d=a[i]-b[i];s+=d*d;}return Math.sqrt(s);}
 function matchFaceStrict(desc){
-  const staff=getStaff().filter(s=>s.descriptors&&s.descriptors.length);
+  const staff=getStaff().filter(s=>!s.leftDate&&s.descriptors&&s.descriptors.length);
   if(!staff.length)return{ok:false,reason:'no-staff'};
   const scored=staff.map(s=>{
     let best=Infinity;
@@ -1618,7 +1620,7 @@ function matchFaceStrict(desc){
   return{ok:true,id:best.id,name:best.name,dist:best.dist,gap:second?second.dist-best.dist:99};
 }
 async function buildMatcher(){
-  const staff=getStaff().filter(s=>s.descriptors&&s.descriptors.length);
+  const staff=getStaff().filter(s=>!s.leftDate&&s.descriptors&&s.descriptors.length);
   if(!staff.length){faceMatcher=null;return;}
   const labeled=staff.map(s=>new faceapi.LabeledFaceDescriptors(s.id,s.descriptors.map(d=>new Float32Array(d))));
   faceMatcher=new faceapi.FaceMatcher(labeled,0.45);
@@ -2464,19 +2466,21 @@ function sharePortalLink(staffId){
 function renderStaffList(){
   const searchEl=document.getElementById('staffSearch');
   const term=(searchEl?searchEl.value:'').trim().toLowerCase();
-  const allStaff=getStaff();
+  renderLeftStaff();
+  const allStaff=getActiveStaff();
   const staff=term?allStaff.filter(s=>s.name.toLowerCase().includes(term)):allStaff;
   document.getElementById('staffCount').textContent=term?staff.length+'/'+allStaff.length:staff.length;
   const el=document.getElementById('staffList');
   if(!allStaff.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">👥</div><p>No staff added yet</p></div>';return;}
   if(!staff.length){el.innerHTML='<div class="empty-state"><p>No staff matching "'+escHtml(term)+'"</p></div>';return;}
   if(typeof renderBirthdayBanner==='function')renderBirthdayBanner();
-  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?(salaryRevealed?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):' &nbsp;🔒 Salary hidden'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions">${s.portalPin?`<button class="btn-ic" title="Send portal link" onclick="sharePortalLink('${s.id}')">📱</button>`:''}<button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
+  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?(salaryRevealed?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):' &nbsp;🔒 Salary hidden'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions">${s.portalPin?`<button class="btn-ic" title="Send portal link" onclick="sharePortalLink('${s.id}')">📱</button>`:''}<button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic" title="Left — job chhod diya" onclick="markStaffLeft('${s.id}')">🚪</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
 }
 function openAddStaff(){
   document.getElementById('editStaffId').value='';document.getElementById('sName').value='';document.getElementById('sRole').value='';
   document.getElementById('sIn').value='09:00';document.getElementById('sOut').value='18:00';
   document.getElementById('sSalary').value='';document.getElementById('sSalaryBasis').value='monthly';document.getElementById('sPortalPin').value='';document.getElementById('sPF').value='1';document.getElementById('sESI').value='1';document.getElementById('sDob').value='';
+  document.getElementById('sJoin').value=toKey(new Date());
   document.getElementById('staffModalTitle').textContent='➕ Add Staff';
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
   openModal('staffModal');startRegCam();
@@ -2486,6 +2490,7 @@ function reRegFace(id){
   document.getElementById('editStaffId').value=id;document.getElementById('sName').value=s.name;document.getElementById('sRole').value=s.role||'';
   document.getElementById('sIn').value=s.shiftIn;document.getElementById('sOut').value=s.shiftOut;
   document.getElementById('sSalary').value=s.salary||'';document.getElementById('sSalaryBasis').value=s.salaryBasis||'monthly';document.getElementById('sPortalPin').value=s.portalPin||'';document.getElementById('sPF').value=s.pf===0?'0':'1';document.getElementById('sESI').value=s.esi===0?'0':'1';document.getElementById('sDob').value=s.dob||'';
+  document.getElementById('sJoin').value=s.joinDate||'';
   document.getElementById('staffModalTitle').textContent='📷 Re-register — '+s.name;
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
   openModal('staffModal');startRegCam();
@@ -2512,13 +2517,14 @@ async function saveStaff(){
   const pf=parseInt(document.getElementById('sPF').value);
   const esi=parseInt(document.getElementById('sESI').value);
   const dob=document.getElementById('sDob').value||'';
+  const joinDate=document.getElementById('sJoin').value||'';
   const eid=document.getElementById('editStaffId').value;
   if(!name){showToast('Enter staff name');return;}
   if(!eid&&getStaff().some(s=>s.name.trim().toLowerCase()===name.toLowerCase())){showToast('⚠️ "'+name+'" naam ka staff already hai!');return;}
   if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
   if(!regPhotos.length&&eid){
     const staff=getStaff(),s=staff.find(x=>x.id===eid);
-    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.updatedAt=new Date().toISOString();}
+    if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.joinDate=joinDate;s.updatedAt=new Date().toISOString();}
     setStaff(staff);closeModal('staffModal');stopRegCam();renderStaffList();
     const ok=await pushStaffNow();
     showToast(ok?'✅ Updated aur cloud pe sync ho gaya!':'⚠️ Update ho gaya par cloud sync fail — internet check karo',ok?3000:6000);
@@ -2539,8 +2545,8 @@ async function saveStaff(){
     const staff=getStaff();
     // Compress photo before storing (240x240 max, JPEG q=0.75) — prevents quota-exceeded
     const smallPhoto=await compressPhoto(regPhotos[0],240,0.75);
-    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.descriptors=descs;s.photo=smallPhoto;s.updatedAt=new Date().toISOString();}}
-    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,salaryBasis,portalPin,pf,esi,dob,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString(),updatedAt:new Date().toISOString()});
+    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.joinDate=joinDate;s.descriptors=descs;s.photo=smallPhoto;s.updatedAt=new Date().toISOString();}}
+    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,salaryBasis,portalPin,pf,esi,dob,joinDate,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString(),updatedAt:new Date().toISOString()});
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
     const ok=await pushStaffNow();
     showToast((ok?'✅ ':'⚠️ ')+name+' saved with '+descs.length+' face samples!'+(ok?'':' (cloud sync fail — internet check karo)'));
@@ -2550,7 +2556,7 @@ async function saveStaff(){
     if(saveBtn){saveBtn.disabled=false;saveBtn.textContent='💾 Save Staff';saveBtn.style.opacity='1';}
   }
 }
-function delStaff(id){if(!confirm('Delete this staff?'))return;setStaff(getStaff().filter(s=>s.id!==id));buildMatcher();renderStaffList();showToast('Deleted');}
+function delStaff(id){if(!confirm('Permanent delete karna hai?\n\nAgar staff ne job chhod di hai to 🚪 "Left" use karo — usse purana record safe rehta hai.'))return;setStaff(getStaff().filter(s=>s.id!==id));buildMatcher();renderStaffList();showToast('Deleted');}
 function openTiming(id){const s=getStaff().find(x=>x.id===id);if(!s)return;document.getElementById('timingId').value=id;document.getElementById('timingName').textContent='👤 '+s.name;document.getElementById('tIn').value=s.shiftIn;document.getElementById('tOut').value=s.shiftOut;openModal('timingModal');}
 async function saveTiming(){
   const id=document.getElementById('timingId').value,staff=getStaff(),s=staff.find(x=>x.id===id);
@@ -2660,7 +2666,7 @@ function fillInspectStaff(){
   const sel=document.getElementById('inspStaff');
   if(!sel)return;
   const cur=sel.value;
-  sel.innerHTML='<option value="">— Select staff —</option>'+getStaff().map(s=>'<option value="'+escHtml(String(s.id))+'">'+escHtml(s.name)+'</option>').join('');
+  sel.innerHTML='<option value="">— Select staff —</option>'+getActiveStaff().map(s=>'<option value="'+escHtml(String(s.id))+'">'+escHtml(s.name)+'</option>').join('');
   if(cur)sel.value=cur;
 }
 function refreshStorageDisplay(){
@@ -2809,7 +2815,7 @@ function setDefaultDates(){
   document.getElementById('rptFrom').value=y+'-'+m+'-01';
   document.getElementById('rptTo').value=toKey(now);
   const staff=getStaff(),sel=document.getElementById('rptStaff');
-  sel.innerHTML='<option value="">All Staff</option>'+staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('');
+  sel.innerHTML='<option value="">All Staff</option>'+staff.map(s=>'<option value="'+s.id+'">'+s.name+(s.leftDate?' (Left)':'')+'</option>').join('');
 }
 async function generateReportFresh(){
   await refreshFromServer(false);
@@ -2860,6 +2866,7 @@ function generateReport(){
   target.forEach(s=>{
     let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,flaggedDays=0,workDays=0,extraDays=0,grossEarned=0,extraPay=0,unpaidOffDays=0,paidOffDays=0;const rows=[];
     dates.forEach(d=>{
+      if(!staffActiveOn(s,d,att))return;   // before first punch / after last working day
       const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
       const dailyRate=getDailyRate(s,d);
@@ -2912,6 +2919,7 @@ function generateReport(){
     const pfOn=s.pf!==0;const esiOn=s.esi!==0&&s.salary&&s.salary<=settings.esiCeiling;
     const pfAmount=pfOn?Math.round(grossEarned*settings.pfRate/100):0;
     const esiAmount=esiOn?Math.round(grossEarned*settings.esiRate/100):0;
+    if(!rows.length)return;   // not active at all in this range
     let netPay=Math.round(grossEarned-pfAmount-esiAmount);
     const override=getSalaryOverride(s.id,from,to);
     const isOverride=!!override;
@@ -2928,7 +2936,9 @@ function generateReport(){
 }
 function computeQuickPct(staffId,dates,att){
   let present=0,workDays=0;
+  const _st=getStaff().find(x=>x.id===staffId);
   dates.forEach(d=>{
+    if(_st&&!staffActiveOn(_st,d,att))return;
     const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
     if(isWO||isHol)return;
     workDays++;
@@ -2940,7 +2950,7 @@ function computeQuickPct(staffId,dates,att){
 function buildDayWiseData(dates,targetStaff,att){
   return dates.map(d=>{
     const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
-    const rows=targetStaff.map(s=>{
+    const rows=targetStaff.filter(s=>staffActiveOn(s,d,att)).map(s=>{
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
       if(isWO||isHol){
         if(recIsAttended(rec))return{staff:s,status:'Extra Day',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
@@ -3438,7 +3448,7 @@ function applyRecalc(){
   setTimeout(()=>recalcAllStatuses(true),700);
 }
 function faceHealthCheck(){
-  const staff=getStaff().filter(s=>s.descriptors&&s.descriptors.length);
+  const staff=getStaff().filter(s=>!s.leftDate&&s.descriptors&&s.descriptors.length);
   const out=document.getElementById('faceHealthOut');
   if(!out)return;
   if(staff.length<2){out.innerHTML='<div style="font-size:12px;color:var(--text3)">Need at least 2 registered staff to compare.</div>';return;}
@@ -4150,7 +4160,8 @@ function renderTrendChart(){
     const key=toKey(d);
     const isOff=isWeekOff(d)||isHoliday(key);
     const present=att.filter(a=>a.date===key&&recIsAttended(a)).length;
-    days.push({key,d,present,isOff,pct:staff.length?Math.round(present/staff.length*100):0});
+    const _exp=staff.filter(x=>staffActiveOn(x,key,att)).length;
+    days.push({key,d,present,isOff,pct:_exp?Math.min(100,Math.round(present/_exp*100)):0});
   }
   const W=320,H=140,PL=26,PR=8,PT=12,PB=26;
   const iw=W-PL-PR,ih=H-PT-PB;
@@ -4183,7 +4194,7 @@ function renderTrendChart(){
 
 function renderTodayDonut(){
   const el=document.getElementById('chartToday');if(!el)return;
-  const staff=getStaff();if(!staff.length){el.innerHTML=chartEmpty('No staff added yet');return;}
+  const staff=getActiveStaff();if(!staff.length){el.innerHTML=chartEmpty('No staff added yet');return;}
   const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today);
   const _stf=getStaff();
   const _isL=a=>getDayFlags(a,_stf.find(x=>x.id===a.staffId)).isLate;
@@ -4214,7 +4225,7 @@ let _rankExpanded=false;
 function toggleRankList(){_rankExpanded=!_rankExpanded;renderStaffRankChart();}
 function renderStaffRankChart(){
   const el=document.getElementById('chartStaffRank');if(!el)return;
-  const staff=getStaff();if(!staff.length){el.innerHTML=chartEmpty('No staff added yet');return;}
+  const staff=getActiveStaff();if(!staff.length){el.innerHTML=chartEmpty('No staff added yet');return;}
   const now=new Date();
   const from=toKey(new Date(now.getFullYear(),now.getMonth(),1)),to=toKey(now);
   const att=getAtt();
@@ -4223,6 +4234,7 @@ function renderStaffRankChart(){
   const rows=staff.map(s=>{
     let onTime=0,late=0,ot=0,early=0,half=0,absent=0,flagged=0;
     dates.forEach(d=>{
+      if(!staffActiveOn(s,d,att))return;
       const r=att.find(a=>a.staffId===s.id&&a.date===d);
       if(!recIsAttended(r)){absent++;return;}
       if(r.status==='Half Day'){half++;return;}
@@ -4295,7 +4307,7 @@ function renderDashCharts(){
   try{renderTodayDonut();}catch(e){console.warn('donut chart',e);}
   try{renderStaffRankChart();}catch(e){console.warn('rank chart',e);}
 }
-function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staff=getStaff(),present=att.filter(a=>a.status!=='Absent').length,late=att.filter(a=>getDayFlags(a,staff.find(x=>x.id===a.staffId)).isLate).length;document.getElementById('sPresent').textContent=present;document.getElementById('sAbsent').textContent=Math.max(0,staff.length-present);document.getElementById('sLate').textContent=late;document.getElementById('sTotal').textContent=staff.length;renderDashCharts();}
+function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staff=getActiveStaff(),present=att.filter(a=>a.status!=='Absent').length,late=att.filter(a=>getDayFlags(a,staff.find(x=>x.id===a.staffId)).isLate).length;document.getElementById('sPresent').textContent=present;document.getElementById('sAbsent').textContent=Math.max(0,staff.length-present);document.getElementById('sLate').textContent=late;document.getElementById('sTotal').textContent=staff.length;renderDashCharts();}
 
 // ══════════════════════════════════════════════
 // NAVIGATION
@@ -4342,6 +4354,66 @@ function toKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'
 function timeDiffMin(a,b){const[ah,am]=a.split(':').map(Number);const[bh,bm]=b.split(':').map(Number);return(bh*60+bm)-(ah*60+am);}
 function timeDiffHours(a,b){return timeDiffMin(a,b)/60;}
 function getTimeOfDay(){const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';}
+// ══════════════════════════════════════════════
+// STAFF ACTIVE PERIOD — a person is only "expected" between their start date and
+// their last working day. Days outside that are never Absent, never pending a reason.
+// Start date = joinDate if set, else the staff's FIRST real punch, else the day they were added.
+// ══════════════════════════════════════════════
+let _fpAtt=null,_fpMap={};
+function _firstPunchMap(att){
+  if(_fpAtt===att)return _fpMap;
+  const m={};
+  (att||[]).forEach(a=>{if(a&&a.date&&recIsAttended(a)){if(!m[a.staffId]||a.date<m[a.staffId])m[a.staffId]=a.date;}});
+  _fpAtt=att;_fpMap=m;return m;
+}
+function staffStartKey(st,att){
+  if(!st)return'';
+  if(st.joinDate)return st.joinDate;
+  const fp=_firstPunchMap(att||getAtt())[st.id];
+  if(fp)return fp;
+  if(st.addedOn){const d=new Date(st.addedOn);if(!isNaN(d))return toKey(d);}
+  return'9999-12-31';
+}
+function staffActiveOn(st,key,att){
+  if(!st)return true;
+  if(key<staffStartKey(st,att))return false;
+  if(st.leftDate&&key>st.leftDate)return false;
+  if(st.gaps&&st.gaps.some(g=>key>g[0]&&key<g[1]))return false;
+  return true;
+}
+function getActiveStaff(){return getStaff().filter(x=>!x.leftDate);}
+function getLeftStaff(){return getStaff().filter(x=>!!x.leftDate);}
+async function markStaffLeft(id){
+  const st=getStaff().find(x=>x.id===id);if(!st)return;
+  const v=prompt('📤 '+st.name+' ka LAST working day likho (YYYY-MM-DD):',toKey(new Date()));
+  if(v===null)return;
+  const key=String(v).trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(key)){showToast('Date aise likho: 2026-10-07');return;}
+  if(!confirm(st.name+' ko "Left" mark karna hai?\n\nAb ye staff list, punch aur Absent count se hat jayega. Purana attendance record report mein '+key+' tak safe rahega.'))return;
+  const staff=getStaff(),t=staff.find(x=>x.id===id);
+  t.leftDate=key;t.updatedAt=new Date().toISOString();
+  setStaff(staff);buildMatcher();renderStaffList();
+  const ok=await pushStaffNow();
+  showToast(ok?'✅ '+t.name+' ko Left mark kar diya':'⚠️ Left mark ho gaya par cloud sync fail — internet check karo',ok?3000:6000);
+}
+async function rejoinStaff(id){
+  const st=getStaff().find(x=>x.id===id);if(!st)return;
+  if(!confirm(st.name+' wapas join kar rahe hain? Aaj se phir attendance count hogi.'))return;
+  const staff=getStaff(),t=staff.find(x=>x.id===id);
+  t.gaps=(t.gaps||[]).concat([[t.leftDate,toKey(new Date())]]);
+  delete t.leftDate;t.updatedAt=new Date().toISOString();
+  setStaff(staff);buildMatcher();renderStaffList();
+  const ok=await pushStaffNow();
+  showToast(ok?'✅ '+t.name+' wapas active':'⚠️ Active ho gaya par cloud sync fail',ok?3000:6000);
+}
+function renderLeftStaff(){
+  const card=document.getElementById('leftStaffCard'),el=document.getElementById('leftStaffList');
+  if(!card||!el)return;
+  const left=getLeftStaff();
+  card.style.display=left.length?'block':'none';
+  document.getElementById('leftStaffCount').textContent=left.length;
+  el.innerHTML=left.map(x=>'<div class="staff-item" style="opacity:.85"><div class="staff-av">'+(x.photo?'<img src="'+x.photo+'">':(x.name[0]||'?').toUpperCase())+'</div><div class="staff-info"><div class="staff-name">'+escHtml(x.name)+'</div><div class="staff-role">Left on '+escHtml(x.leftDate)+'</div></div><div class="staff-actions"><button class="btn-ic" title="Wapas join" onclick="rejoinStaff(\''+x.id+'\')">↩️</button><button class="btn-ic danger" onclick="delStaff(\''+x.id+'\')">🗑️</button></div></div>').join('');
+}
 let pendingReasonDate=null;
 function findPendingReasonDay(staff){
   // Returns the OLDEST day in the last 7 that still needs a reason, or null.
@@ -4351,6 +4423,7 @@ function findPendingReasonDay(staff){
     const key=toKey(d);
     if(key>=todayKey)continue;
     if(isWeekOff(d)||isHoliday(key))continue;
+    if(!staffActiveOn(staff,key,att))continue;
     const rec=att.find(a=>a.staffId===staff.id&&a.date===key);
     if(!recIsAttended(rec)){
       // Never punched that day. Only ask if it hasn't already been answered.
