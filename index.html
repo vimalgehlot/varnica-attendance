@@ -912,7 +912,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     </div>
     <div class="ig"><label class="il">ESI Applicable?</label><select class="if" id="sESI"><option value="1">Yes</option><option value="0">No</option></select></div>
     <div class="ig"><label class="il">Date of Birth 🎂 (optional)</label><input type="date" class="if" id="sDob"></div>
-    <div class="ig"><label class="il">Joining Date 📅 (blank = pehli punch se)</label><input type="date" class="if" id="sJoin"></div>
+    <div class="ig"><label class="il">Joining Date 📅 (blank = from first punch)</label><input type="date" class="if" id="sJoin"></div>
     <label class="il">Face Registration (3-5 photos)</label>
     <div class="reg-cam-wrap"><video id="regVideo" autoplay muted playsinline></video><div class="reg-guide-ov"><div class="reg-guide"></div></div></div>
     <div class="photo-thumbs" id="photoThumbs"></div>
@@ -990,7 +990,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
 <div class="popup-ov" id="absentPopup">
   <div class="popup-box">
     <div class="popup-icon">📅</div>
-    <div class="popup-title">Yesterday's Absence</div>
+    <div class="popup-title" id="absentTitle">Absence Reason</div>
     <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:8px 0">
       <img id="absentStaffPhoto" src="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;display:none">
       <div style="font-size:20px;font-weight:800;color:var(--brand-deep)">👤 <span id="absentStaffName"></span></div>
@@ -1379,7 +1379,7 @@ function dedupeAtt(arr){
   // and every .find(a=>a.staffId===staff.id) in the app uses strict === — so a
   // type mismatch made a record invisible to the app while still sitting in
   // storage. That is what made a saved reason look like it had never saved.
-  const score=r=>(r&&r.outTime?2:0)+(r&&r.inTime?1:0)+(r&&(r.reason||r.lateReason||r.absentReason||r.earlyOutReason)?1:0);
+  const score=r=>(r&&r.outTime?2:0)+(r&&r.inTime?1:0)+(r&&(r.reason||r.lateReason||r.absentReason||r.earlyOutReason||r.noOutReason)?1:0);
   const byKey={};const order=[];
   (arr||[]).forEach(raw=>{
     if(!raw||raw.staffId===undefined||raw.staffId===null||!raw.date)return;
@@ -1399,6 +1399,7 @@ function dedupeAtt(arr){
       lateReason:winner.lateReason||loser.lateReason,
       earlyOutReason:winner.earlyOutReason||loser.earlyOutReason,
       absentReason:winner.absentReason||loser.absentReason,
+      noOutReason:winner.noOutReason||loser.noOutReason,
       reason:winner.reason||loser.reason,
       hasInPhoto:(winner.hasInPhoto||loser.hasInPhoto)===true,
       hasOutPhoto:(winner.hasOutPhoto||loser.hasOutPhoto)===true
@@ -1999,7 +2000,7 @@ function mergeAttRecords(base,incoming){
   // manual correction (which has no punch times, so a low "completeness" score) would
   // silently lose to the very record it was meant to replace. Between two hand-set
   // records the newer one wins. Otherwise the more complete record wins.
-  const score=r=>(r&&r.outTime?2:0)+(r&&r.inTime?1:0)+(r&&(r.reason||r.lateReason||r.absentReason||r.earlyOutReason)?1:0);
+  const score=r=>(r&&r.outTime?2:0)+(r&&r.inTime?1:0)+(r&&(r.reason||r.lateReason||r.absentReason||r.earlyOutReason||r.noOutReason)?1:0);
   function better(a,b){    // returns true if b should replace a
     const am=a&&a.manual===true, bm=b&&b.manual===true;
     if(bm&&!am)return true;
@@ -2038,7 +2039,7 @@ function keepKnown(a,b){
   // a = the record that survives, b = the other copy. Fill a's gaps from b.
   if(!a||!b)return a;
   ['hasInPhoto','hasOutPhoto'].forEach(k=>{if(b[k]===true)a[k]=true;});
-  ['reason','lateReason','earlyOutReason','absentReason'].forEach(k=>{if(!a[k]&&b[k])a[k]=b[k];});
+  ['reason','lateReason','earlyOutReason','absentReason','noOutReason'].forEach(k=>{if(!a[k]&&b[k])a[k]=b[k];});
   return a;
 }
 function mergeStaffRecords(base,incoming){
@@ -2147,6 +2148,8 @@ async function handlePunch(staff,photo){
   // popups (welcome / late-reason) have finished so they don't fight each other.
   pendingAbsentId=staff.id;
   pendingReasonDate=pending.date;
+  pendingReasonDates=pending.dates||[pending.date];
+  pendingReasonKind=pending.status;
   let tries=0;
   const askPending=()=>{
     if(pendingAbsentId!==staff.id)return;               // something else took over
@@ -2159,9 +2162,16 @@ async function handlePunch(staff,photo){
     nameEl.textContent=staff.name;
     const absPhotoEl=document.getElementById('absentStaffPhoto');
     if(staff.photo){absPhotoEl.src=staff.photo;absPhotoEl.style.display='inline-block';}else{absPhotoEl.style.display='none';}
+    const _dts=pending.dates||[pending.date];
+    const _ttl=document.getElementById('absentTitle');
+    if(_ttl)_ttl.textContent=pending.status==='Absent'?(_dts.length>1?'Absent for '+_dts.length+' days':'Absence Reason'):(pending.status==='NoOut'?'Missed OUT Punch':'Reason Needed');
     document.getElementById('absentMsg').textContent=pending.status==='Absent'
-      ? 'You were absent on '+fmtDateLabel(pending.date)+'. Please provide a reason.'
-      : 'Your '+pending.status+' on '+fmtDateLabel(pending.date)+' has no reason yet. Please provide a reason.';
+      ? (_dts.length>1
+          ? 'You were absent from '+fmtDateLabel(_dts[0])+' to '+fmtDateLabel(_dts[_dts.length-1])+' ('+_dts.length+' working days). Please give one reason for all these days.'
+          : 'You were absent on '+fmtDateLabel(pending.date)+'. Please provide a reason.')
+      : (pending.status==='NoOut'
+          ? 'You punched IN on '+fmtDateLabel(pending.date)+' but did not punch OUT, so the day was counted as a Half Day. Please tell why you did not punch OUT.'
+          : 'Your '+pending.status+' on '+fmtDateLabel(pending.date)+' has no reason yet. Please provide a reason.');
     document.getElementById('absentReason').value='';document.getElementById('absentReqMsg').style.display='none';
     openPopup('absentPopup');
     const absSkipBtn=document.getElementById('absentSkipBtn');
@@ -2389,33 +2399,13 @@ function submitWarning(){
   showWelcomePopup(staff,punchType,timeStr,rec);renderTodayLog();updateDashStats();pendingPunchData=null;
 }
 
-function skipAbsentReason(){
-  const targetDate=pendingReasonDate||toKey(new Date(Date.now()-86400000));
-  const att=getAtt();
-  const staff=getStaff().find(s=>s.id===pendingAbsentId);
-  const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===targetDate);
-  if(existing){existing.absentReason='(skipped)';setAtt(att);}
-  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:targetDate,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:'(skipped)'});setAtt(att);}
-  closePopup('absentPopup');
-  syncRecord({action:'punch',staffId:pendingAbsentId,staffName:staff?staff.name:'',date:targetDate,status:'Absent',absentReason:'(skipped)',hours:0});
-  // Punch was already recorded in handlePunch — do NOT punch again here.
-  pendingAbsentId=null;pendingPunchData=null;pendingReasonDate=null;
-}
-function submitAbsentReason(){
-  const reason=document.getElementById('absentReason').value.trim();
-  if(!reason){document.getElementById('absentReqMsg').style.display='block';document.getElementById('absentReqMsg').textContent='⚠️ Please enter a reason.';return;}
-  const targetDate=pendingReasonDate||toKey(new Date(Date.now()-86400000));
-  const att=getAtt();
-  const staff=getStaff().find(s=>s.id===pendingAbsentId);
-  const existing=att.find(a=>a.staffId===pendingAbsentId&&a.date===targetDate);
-  const failMsg=()=>{const m=document.getElementById('absentReqMsg');m.style.display='block';m.textContent='❌ Save failed (storage full). Auto-cleanup done — please press "Submit" again.';};
-  // A reason being answered means this day is genuinely active — clear any old
-  // tombstone (from a past admin Matrix "–" clear) so the record this saves
-  // can't be silently filtered out again on the next cloud merge.
-  removeTombstone(pendingAbsentId,targetDate);
+function _applyPendingReason(att,staff,sid,date,reason,kind){
+  // Writes the reason onto one day's record (creating an Absent record if none exists).
+  removeTombstone(sid,date);
+  const existing=att.find(a=>a.staffId===sid&&a.date===date);
   if(existing){
-    // Could be an Absent day OR a Late / Early Out / Half Day that never got a reason
-    if(existing.status==='Absent'||!existing.inTime)existing.absentReason=reason;
+    if(kind==='NoOut'&&existing.inTime&&!existing.outTime)existing.noOutReason=reason;
+    else if(kind==='Absent'||existing.status==='Absent'||!existing.inTime)existing.absentReason=reason;
     else if(getDayFlags(existing,staff).isLate)existing.lateReason=reason;
     else if(getDayFlags(existing,staff).isEarlyOut)existing.earlyOutReason=reason;
     else existing.reason=reason; // Half Day / other — no dedicated field yet
@@ -2423,14 +2413,45 @@ function submitAbsentReason(){
     // bumping manualAt the merge saw two manual copies with identical
     // timestamps and kept the older (reason-less) one on the next app load.
     if(existing.manual===true)existing.manualAt=new Date().toISOString();
-    if(!setAtt(att)){failMsg();return;}
+    return existing;
   }
-  else{att.push({staffId:pendingAbsentId,staffName:staff?staff.name:'',date:targetDate,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason});if(!setAtt(att)){failMsg();return;}}
+  const rec={staffId:sid,staffName:staff?staff.name:'',date,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:reason};
+  att.push(rec);
+  return rec;
+}
+function _pendingDates(){
+  return(pendingReasonDates&&pendingReasonDates.length)?pendingReasonDates.slice():[pendingReasonDate||toKey(new Date(Date.now()-86400000))];
+}
+function skipAbsentReason(){
+  const sid=pendingAbsentId,kind=pendingReasonKind,dates=_pendingDates();
+  const att=getAtt();
+  const staff=getStaff().find(s=>s.id===sid);
+  dates.forEach(dt=>{
+    const existing=att.find(a=>a.staffId===sid&&a.date===dt);
+    if(existing){if(kind==='NoOut'&&existing.inTime&&!existing.outTime)existing.noOutReason='(skipped)';else existing.absentReason='(skipped)';}
+    else att.push({staffId:sid,staffName:staff?staff.name:'',date:dt,inTime:null,outTime:null,status:'Absent',method:'auto',hours:0,reason:'',absentReason:'(skipped)'});
+  });
+  setAtt(att);
   closePopup('absentPopup');
-  const savedRec=getAtt().find(a=>a.staffId===pendingAbsentId&&a.date===targetDate);
-  if(savedRec)syncRecord(savedRec);
+  dates.forEach(dt=>{const sr=getAtt().find(a=>a.staffId===sid&&a.date===dt);if(sr)syncRecord(sr);});
   // Punch was already recorded in handlePunch — do NOT punch again here.
-  pendingAbsentId=null;pendingPunchData=null;pendingReasonDate=null;
+  pendingAbsentId=null;pendingPunchData=null;pendingReasonDate=null;pendingReasonDates=[];pendingReasonKind='';
+}
+function submitAbsentReason(){
+  const reason=document.getElementById('absentReason').value.trim();
+  if(!reason){document.getElementById('absentReqMsg').style.display='block';document.getElementById('absentReqMsg').textContent='⚠️ Please enter a reason.';return;}
+  const sid=pendingAbsentId,kind=pendingReasonKind,dates=_pendingDates();
+  const att=getAtt();
+  const staff=getStaff().find(s=>s.id===sid);
+  const failMsg=()=>{const m=document.getElementById('absentReqMsg');m.style.display='block';m.textContent='❌ Save failed (storage full). Auto-cleanup done — please press "Submit" again.';};
+  // One answer covers every day of the block. A reason being answered also means each
+  // day is genuinely active — _applyPendingReason clears any old Matrix "–" tombstone.
+  dates.forEach(dt=>_applyPendingReason(att,staff,sid,dt,reason,kind));
+  if(!setAtt(att)){failMsg();return;}
+  closePopup('absentPopup');
+  dates.forEach(dt=>{const sr=getAtt().find(a=>a.staffId===sid&&a.date===dt);if(sr)syncRecord(sr);});
+  // Punch was already recorded in handlePunch — do NOT punch again here.
+  pendingAbsentId=null;pendingPunchData=null;pendingReasonDate=null;pendingReasonDates=[];pendingReasonKind='';
 }
 
 async function captureFail(){
@@ -2474,7 +2495,7 @@ function renderStaffList(){
   if(!allStaff.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">👥</div><p>No staff added yet</p></div>';return;}
   if(!staff.length){el.innerHTML='<div class="empty-state"><p>No staff matching "'+escHtml(term)+'"</p></div>';return;}
   if(typeof renderBirthdayBanner==='function')renderBirthdayBanner();
-  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?(salaryRevealed?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):' &nbsp;🔒 Salary hidden'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions">${s.portalPin?`<button class="btn-ic" title="Send portal link" onclick="sharePortalLink('${s.id}')">📱</button>`:''}<button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic" title="Left — job chhod diya" onclick="markStaffLeft('${s.id}')">🚪</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
+  el.innerHTML=staff.map(s=>`<div class="staff-item"><div class="staff-av">${s.photo?'<img src="'+s.photo+'">':(s.name[0]||'?').toUpperCase()}</div><div class="staff-info"><div class="staff-name">${s.name}</div><div class="staff-role">${s.role||'Staff'}</div><div class="staff-timing">⏰ ${s.shiftIn} – ${s.shiftOut}${s.salary?(salaryRevealed?' &nbsp;💰 ₹'+Number(s.salary).toLocaleString('en-IN'):' &nbsp;🔒 Salary hidden'):''}</div><span class="tag ${s.descriptors&&s.descriptors.length?'tag-ok':'tag-warn'}">${s.descriptors&&s.descriptors.length?'✅ Face OK':'⚠️ No Face'}</span></div><div class="staff-actions">${s.portalPin?`<button class="btn-ic" title="Send portal link" onclick="sharePortalLink('${s.id}')">📱</button>`:''}<button class="btn-ic" onclick="openTiming('${s.id}')">⏰</button><button class="btn-ic" onclick="reRegFace('${s.id}')">📷</button><button class="btn-ic" title="Mark as Left" onclick="markStaffLeft('${s.id}')">🚪</button><button class="btn-ic danger" onclick="delStaff('${s.id}')">🗑️</button></div></div>`).join('');
 }
 function openAddStaff(){
   document.getElementById('editStaffId').value='';document.getElementById('sName').value='';document.getElementById('sRole').value='';
@@ -2556,7 +2577,7 @@ async function saveStaff(){
     if(saveBtn){saveBtn.disabled=false;saveBtn.textContent='💾 Save Staff';saveBtn.style.opacity='1';}
   }
 }
-function delStaff(id){if(!confirm('Permanent delete karna hai?\n\nAgar staff ne job chhod di hai to 🚪 "Left" use karo — usse purana record safe rehta hai.'))return;setStaff(getStaff().filter(s=>s.id!==id));buildMatcher();renderStaffList();showToast('Deleted');}
+function delStaff(id){if(!confirm('Delete permanently?\n\nIf this person has left the job, use the 🚪 Left button instead — it keeps their old records safe.'))return;setStaff(getStaff().filter(s=>s.id!==id));buildMatcher();renderStaffList();showToast('Deleted');}
 function openTiming(id){const s=getStaff().find(x=>x.id===id);if(!s)return;document.getElementById('timingId').value=id;document.getElementById('timingName').textContent='👤 '+s.name;document.getElementById('tIn').value=s.shiftIn;document.getElementById('tOut').value=s.shiftOut;openModal('timingModal');}
 async function saveTiming(){
   const id=document.getElementById('timingId').value,staff=getStaff(),s=staff.find(x=>x.id===id);
@@ -2884,10 +2905,10 @@ function generateReport(){
           paidOffDays++;grossEarned+=dailyRate;
           if(worked){
             // Worked on it too → one ADDITIONAL day's pay on top of the rest-day credit
-            extraDays++;
-            const dayPay=Math.round(dailyRate);
-            extraPay+=dayPay;grossEarned+=dailyRate;
-            rows.push({date:d,staffId:s.id,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked, 2 days pay)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+            // From 1 Oct: the extra day is 0 / 0.5 / 1 depending on the hours actually worked
+            const frac=offDayFraction(rec,s,d);
+            if(frac>0){extraDays+=frac;extraPay+=Math.round(dailyRate*frac);grossEarned+=dailyRate*frac;}
+            rows.push({date:d,staffId:s.id,status:frac>0?'Extra Day':(isHol?'Holiday':'Week Off'),statusText:frac>0?(frac<1?'Extra Day (½)':'Extra Day'):'',extraFrac:frac,inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec)||(frac>0?'('+(isHol?'Holiday':'Week Off')+' — worked, '+(frac<1?'half':'full')+' extra day)':'('+(isHol?'Holiday':'Week Off')+' — punched but worked too little, no extra day)'),inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
           }else{
             rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});
           }
@@ -2898,14 +2919,15 @@ function generateReport(){
       if(!recIsAttended(rec)){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',manual:rec?.manual===true,inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
       else{
         const fl=getDayFlags(rec,s);
+        const es=effStatus(rec)||'Present';       // 'Half Day' when IN punched but OUT never punched
         if(fl.isLate)late++;
-        if(rec.status==='Half Day')halfDay++;
+        if(es==='Half Day')halfDay++;
         if(fl.isOvertime)overtime++;
         if(fl.isEarlyOut)earlyOut++;
-        if(rec.status!=='Absent'&&rec.status!=='Half Day'&&(fl.isLate||fl.isOvertime||fl.isEarlyOut))flaggedDays++;
-        if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;
-        grossEarned+=(rec.status==='Half Day')?dailyRate*0.5:dailyRate;
-        rows.push({date:d,staffId:s.id,status:rec.status||'Present',...dayFlagFields(rec,s),inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec),manual:rec.manual===true,inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+        if(es!=='Absent'&&es!=='Half Day'&&(fl.isLate||fl.isOvertime||fl.isEarlyOut))flaggedDays++;
+        if(es!=='Absent'&&es!=='Half Day')present++;
+        grossEarned+=(es==='Half Day')?dailyRate*0.5:dailyRate;
+        rows.push({date:d,staffId:s.id,status:es,...dayFlagFields(rec,s),inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec),manual:rec.manual===true,inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
       }
     });
     const settings=getSettings();
@@ -2943,7 +2965,7 @@ function computeQuickPct(staffId,dates,att){
     if(isWO||isHol)return;
     workDays++;
     const rec=att.find(a=>a.staffId===staffId&&a.date===d);
-    if(recIsAttended(rec)&&rec.status!=='Absent'&&rec.status!=='Half Day')present++;
+    if(recIsAttended(rec)&&effStatus(rec)!=='Absent'&&effStatus(rec)!=='Half Day')present++;
   });
   return workDays>0?Math.round(present/workDays*100):null;
 }
@@ -2953,11 +2975,11 @@ function buildDayWiseData(dates,targetStaff,att){
     const rows=targetStaff.filter(s=>staffActiveOn(s,d,att)).map(s=>{
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
       if(isWO||isHol){
-        if(recIsAttended(rec))return{staff:s,status:'Extra Day',inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:rec.reason||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
+        if(recIsAttended(rec))return{staff:s,status:offDayFraction(rec,s,d)>0?'Extra Day':(isHol?'Holiday':'Week Off'),statusText:offDayFraction(rec,s,d)===0?'':(offDayFraction(rec,s,d)<1?'Extra Day (½)':'Extra Day'),inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec)||'('+(isHol?'Holiday':'Week Off')+' — worked anyway)',inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
         return{staff:s,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''};
       }
       if(!recIsAttended(rec))return{staff:s,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false};
-      return{staff:s,status:rec.status||'Present',...dayFlagFields(rec,s),inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec),inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
+      return{staff:s,status:effStatus(rec)||'Present',...dayFlagFields(rec,s),inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec),inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true};
     });
     let present=0,absent=0,late=0,halfDay=0,earlyOut=0,overtime=0,extraDays=0;
     if(!isWO&&!isHol){rows.forEach(r=>{if(r.status==='Absent')absent++;else{if(r.isLate)late++;if(r.status==='Half Day')halfDay++;if(r.isOvertime)overtime++;if(r.isEarlyOut)earlyOut++;if(r.status!=='Half Day')present++;}});}
@@ -2999,7 +3021,7 @@ function quickFilterReport(range){
 }
 function escHtml(s){return(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtDateLabel(d){const dt=new Date(d+'T00:00:00');return dt.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short'});}
-function statusColor(status){status=String(status||'').split(' + ')[0];return status==='Absent'?'var(--red)':(status==='Late'||status==='Early Out')?'var(--orange)':status==='Extra Day'?'#b8955a':(status==='Present'||status==='Overtime')?'var(--green)':'var(--text2)';}
+function statusColor(status){status=String(status||'').split(' + ')[0].replace(/ \(.*$/,'');return status==='Absent'?'var(--red)':(status==='Late'||status==='Early Out')?'var(--orange)':status==='Extra Day'?'#b8955a':(status==='Present'||status==='Overtime')?'var(--green)':'var(--text2)';}
 function renderHighlights(summaries){
   const el=document.getElementById('reportHighlights');
   const flagged=summaries.filter(s=>(s.workDays>0&&s.absent/s.workDays>0.2)||s.late>=3||s.earlyOut>=3);
@@ -3074,7 +3096,7 @@ async function punchHealthCheck(){
   // A record "has data" if it has a punch OR a reason — Absent-day records (no
   // punch, only a reason) used to be skipped entirely here, so a reason that
   // existed on only one side never showed up as a mismatch.
-  const hasData=r=>r&&(r.inTime||r.lateReason||r.earlyOutReason||r.absentReason||r.reason);
+  const hasData=r=>r&&(r.inTime||r.lateReason||r.earlyOutReason||r.absentReason||r.noOutReason||r.reason);
   const reasonOf=r=>reasonSummary(r||{});
   allKeys.forEach(k=>{
     const l=L[k],s=S[k];
@@ -3204,7 +3226,7 @@ function renderEditMatrix(){
     const cells=dates.map(d=>{
       const isOff=isWeekOff(new Date(d+'T00:00:00'))||isHoliday(d);
       const rec=att.find(a=>a.staffId===s.id&&a.date===d);
-      const cur=rec?(rec.status||''):'';
+      const cur=rec?(effStatus(rec)||''):'';
       const workedOff=isOff&&recIsAttended(rec);
       const st=isOff?(workedOff?{c:'#8B6A35',bg:'rgba(184,149,90,0.22)'}:{c:'#B89878',bg:'rgba(0,0,0,0.04)'}):mtxStyleFor(cur);
       const list=isOff?MTX_OFFDAY_STATUSES:MTX_STATUSES;
@@ -3239,6 +3261,7 @@ function cancelPunch(staffId,date){
   rec.inTime='';rec.outTime='';rec.hours=0;
   // The whole point of this button — no punch, no photo left behind
   rec.hasInPhoto=false;rec.hasOutPhoto=false;delete rec.inPhoto;delete rec.outPhoto;
+  delete rec.statusLocked;               // status is recomputed from the times just entered
   rec.method='manual';rec.manual=true;rec.manualAt=new Date().toISOString();
   removeTombstone(staffId,date);
   if(!setAtt(att)){showToast('❌ Save failed — try Optimize Storage',5000);return;}
@@ -3304,6 +3327,7 @@ function saveTimeEdit(){
     rec.hours=0;
     rec.status=(timeDiffMin(staff.shiftIn||'09:00',inT)>getSettings().grace)?'Late':'Present';
   }
+  delete rec.statusLocked;               // status is recomputed from the times just entered
   rec.method='manual';rec.manual=true;rec.manualAt=new Date().toISOString();
   if(!setAtt(att)){msg.textContent='Save failed — try Optimize Storage.';msg.style.display='block';return;}
   try{syncRecord(rec);}catch(e){}
@@ -3346,6 +3370,7 @@ function mtxChange(sel,staffId,date){
     }
     rec.method='manual';
     rec.manual=true;                       // marks it as set by hand
+    rec.statusLocked=true;                 // admin chose this status on purpose — auto rules must not override it
     rec.manualAt=new Date().toISOString();
     if(!setAtt(att)){showToast('❌ Save failed — try Optimize Storage',5000);return;}
     try{syncRecord(rec);}catch(e){}
@@ -4237,7 +4262,7 @@ function renderStaffRankChart(){
       if(!staffActiveOn(s,d,att))return;
       const r=att.find(a=>a.staffId===s.id&&a.date===d);
       if(!recIsAttended(r)){absent++;return;}
-      if(r.status==='Half Day'){half++;return;}
+      if(effStatus(r)==='Half Day'){half++;return;}
       if(r.status==='Absent'){absent++;return;}
       const fl=getDayFlags(r,s);
       if(fl.isLate)late++;
@@ -4345,7 +4370,7 @@ function closePopup(id){
 function resetStatusCard(){const c=document.getElementById('statusCard');c.className='status-card';c.innerHTML='<div class="status-icon">👤</div><div style="font-size:14px;color:var(--text2)">Waiting for face scan...</div><div style="font-size:11px;color:var(--text3)">Look directly at the camera</div>';}
 
 // EXPORT
-function exportAllCSV(){const att=getAtt();if(!att.length){showToast('No data');return;}const _sm={};getStaff().forEach(x=>{_sm[x.id]=x;});dlCSV([['Date','Staff','IN','OUT','Status','Late','Overtime','Early Out','Shift Hours','Late Reason','Early Out Reason','Absent Reason'],...att.map(a=>{const f=getDayFlags(a,_sm[a.staffId]);return[a.date,a.staffName,a.inTime||'',a.outTime||'',buildStatusText(a,f),f.isLate?1:0,f.isOvertime?1:0,f.isEarlyOut?1:0,fmtWorked(a),a.lateReason||'',a.earlyOutReason||'',a.absentReason||''];})],'varnica_attendance.csv');}
+function exportAllCSV(){const att=getAtt();if(!att.length){showToast('No data');return;}const _sm={};getStaff().forEach(x=>{_sm[x.id]=x;});dlCSV([['Date','Staff','IN','OUT','Status','Late','Overtime','Early Out','Shift Hours','Late Reason','Early Out Reason','Absent Reason','No OUT Reason'],...att.map(a=>{const f=getDayFlags(a,_sm[a.staffId]);return[a.date,a.staffName,a.inTime||'',a.outTime||'',buildStatusText(a,f),f.isLate?1:0,f.isOvertime?1:0,f.isEarlyOut?1:0,fmtWorked(a),a.lateReason||'',a.earlyOutReason||'',a.absentReason||'',a.noOutReason||''];})],'varnica_attendance.csv');}
 function exportStaffCSV(){const s=getStaff();if(!s.length){showToast('No staff');return;}dlCSV([['Name','Role','Shift In','Shift Out','Face'],...s.map(x=>[x.name,x.role||'',x.shiftIn,x.shiftOut,x.descriptors?.length?'Yes':'No'])],'varnica_staff.csv');}
 function dlCSV(rows,name){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=name;a.click();showToast('Downloaded!');}
 
@@ -4354,6 +4379,40 @@ function toKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'
 function timeDiffMin(a,b){const[ah,am]=a.split(':').map(Number);const[bh,bm]=b.split(':').map(Number);return(bh*60+bm)-(ah*60+am);}
 function timeDiffHours(a,b){return timeDiffMin(a,b)/60;}
 function getTimeOfDay(){const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';}
+// ══════════════════════════════════════════════
+// RULES EFFECTIVE FROM 1 OCT 2026 (records dated before this keep the old behaviour)
+//  1. Punched IN but never OUT (day is over)  -> Half Day, reason asked next day
+//  2. Worked on a Week-Off / Holiday           -> extra day = 0 / 0.5 / 1 by hours worked
+//  3. Several absent days in a row             -> ONE reason popup for the whole block
+// ══════════════════════════════════════════════
+var NEW_RULES_FROM='2026-10-01';
+function recNoOut(rec){
+  // IN punch, no OUT punch, and that day is already over (today is still in progress).
+  // An admin's explicit status chosen in the Matrix (statusLocked) is never overridden.
+  if(!rec||!rec.inTime||rec.outTime)return false;
+  if(!rec.date||rec.date<NEW_RULES_FROM||rec.date>=toKey(new Date()))return false;
+  if(rec.status==='Absent'||rec.status==='Leave'||rec.statusLocked===true)return false;
+  return true;
+}
+function effStatus(rec){
+  if(!rec)return'';
+  return recNoOut(rec)?'Half Day':rec.status;
+}
+function offDayFraction(rec,staff,dateKey){
+  // How much of an EXTRA day a punch on a Week-Off / Holiday earns: 0, 0.5 or 1.
+  if(!rec)return 0;
+  if(dateKey<NEW_RULES_FROM)return 1;                       // old rule: always a full extra day
+  if(rec.statusLocked===true){const ls=rec.status;return ls==='Half Day'?0.5:((ls==='Absent'||ls==='Leave')?0:1);}
+  if(rec.inTime&&rec.outTime){
+    const hrs=safeHours(rec.inTime,rec.outTime);
+    if(hrs===null)return 1;                                  // unreadable times — keep old behaviour
+    const c=classifyOutStatus(staff,hrs,timeDiffMin(rec.outTime,staff.shiftOut||'18:00'),rec.outTime).status;
+    return c==='Absent'?0:(c==='Half Day'?0.5:1);
+  }
+  if(rec.inTime&&!rec.outTime)return(dateKey<toKey(new Date()))?0.5:1;   // no OUT once the day is over = half
+  const st=rec.status;                                       // hand-set, no punch times
+  return st==='Half Day'?0.5:((st==='Absent'||st==='Leave')?0:1);
+}
 // ══════════════════════════════════════════════
 // STAFF ACTIVE PERIOD — a person is only "expected" between their start date and
 // their last working day. Days outside that are never Absent, never pending a reason.
@@ -4385,26 +4444,26 @@ function getActiveStaff(){return getStaff().filter(x=>!x.leftDate);}
 function getLeftStaff(){return getStaff().filter(x=>!!x.leftDate);}
 async function markStaffLeft(id){
   const st=getStaff().find(x=>x.id===id);if(!st)return;
-  const v=prompt('📤 '+st.name+' ka LAST working day likho (YYYY-MM-DD):',toKey(new Date()));
+  const v=prompt('📤 Last working day of '+st.name+' (YYYY-MM-DD):',toKey(new Date()));
   if(v===null)return;
   const key=String(v).trim();
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(key)){showToast('Date aise likho: 2026-10-07');return;}
-  if(!confirm(st.name+' ko "Left" mark karna hai?\n\nAb ye staff list, punch aur Absent count se hat jayega. Purana attendance record report mein '+key+' tak safe rahega.'))return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(key)){showToast('Enter the date like 2026-10-07');return;}
+  if(!confirm('Mark '+st.name+' as Left?\n\nThey will be removed from the staff list, punching and Absent counts. Old attendance stays in reports up to '+key+'.'))return;
   const staff=getStaff(),t=staff.find(x=>x.id===id);
   t.leftDate=key;t.updatedAt=new Date().toISOString();
   setStaff(staff);buildMatcher();renderStaffList();
   const ok=await pushStaffNow();
-  showToast(ok?'✅ '+t.name+' ko Left mark kar diya':'⚠️ Left mark ho gaya par cloud sync fail — internet check karo',ok?3000:6000);
+  showToast(ok?'✅ '+t.name+' marked as Left':'⚠️ Marked as Left, but cloud sync failed — check internet',ok?3000:6000);
 }
 async function rejoinStaff(id){
   const st=getStaff().find(x=>x.id===id);if(!st)return;
-  if(!confirm(st.name+' wapas join kar rahe hain? Aaj se phir attendance count hogi.'))return;
+  if(!confirm(st.name+' is rejoining? Attendance will count again from today.'))return;
   const staff=getStaff(),t=staff.find(x=>x.id===id);
   t.gaps=(t.gaps||[]).concat([[t.leftDate,toKey(new Date())]]);
   delete t.leftDate;t.updatedAt=new Date().toISOString();
   setStaff(staff);buildMatcher();renderStaffList();
   const ok=await pushStaffNow();
-  showToast(ok?'✅ '+t.name+' wapas active':'⚠️ Active ho gaya par cloud sync fail',ok?3000:6000);
+  showToast(ok?'✅ '+t.name+' is active again':'⚠️ Active again, but cloud sync failed',ok?3000:6000);
 }
 function renderLeftStaff(){
   const card=document.getElementById('leftStaffCard'),el=document.getElementById('leftStaffList');
@@ -4412,28 +4471,44 @@ function renderLeftStaff(){
   const left=getLeftStaff();
   card.style.display=left.length?'block':'none';
   document.getElementById('leftStaffCount').textContent=left.length;
-  el.innerHTML=left.map(x=>'<div class="staff-item" style="opacity:.85"><div class="staff-av">'+(x.photo?'<img src="'+x.photo+'">':(x.name[0]||'?').toUpperCase())+'</div><div class="staff-info"><div class="staff-name">'+escHtml(x.name)+'</div><div class="staff-role">Left on '+escHtml(x.leftDate)+'</div></div><div class="staff-actions"><button class="btn-ic" title="Wapas join" onclick="rejoinStaff(\''+x.id+'\')">↩️</button><button class="btn-ic danger" onclick="delStaff(\''+x.id+'\')">🗑️</button></div></div>').join('');
+  el.innerHTML=left.map(x=>'<div class="staff-item" style="opacity:.85"><div class="staff-av">'+(x.photo?'<img src="'+x.photo+'">':(x.name[0]||'?').toUpperCase())+'</div><div class="staff-info"><div class="staff-name">'+escHtml(x.name)+'</div><div class="staff-role">Left on '+escHtml(x.leftDate)+'</div></div><div class="staff-actions"><button class="btn-ic" title="Rejoin" onclick="rejoinStaff(\''+x.id+'\')">↩️</button><button class="btn-ic danger" onclick="delStaff(\''+x.id+'\')">🗑️</button></div></div>').join('');
 }
-let pendingReasonDate=null;
+let pendingReasonDate=null,pendingReasonDates=[],pendingReasonKind='';
 function findPendingReasonDay(staff){
-  // Returns the OLDEST day in the last 7 that still needs a reason, or null.
+  // Returns the OLDEST thing that still needs a reason, or null:
+  //  - a block of consecutive unexplained ABSENT working days -> ONE entry covering all of them
+  //  - a day with IN punch but no OUT punch                   -> 'NoOut'
+  //  - a single Late / Early Out / Half Day with no reason
+  // Looks back up to 31 days, but never before 1 Oct 2026 (NEW_RULES_FROM).
   const att=getAtt(),todayKey=toKey(new Date());
-  for(let back=7;back>=1;back--){
+  let run=[];
+  const finishRun=()=>run.length?{date:run[0],dates:run.slice(),status:'Absent'}:null;
+  for(let back=31;back>=1;back--){
     const d=new Date();d.setDate(d.getDate()-back);
     const key=toKey(d);
     if(key>=todayKey)continue;
-    if(isWeekOff(d)||isHoliday(key))continue;
+    if(key<NEW_RULES_FROM)continue;
     if(!staffActiveOn(staff,key,att))continue;
     const rec=att.find(a=>a.staffId===staff.id&&a.date===key);
-    if(!recIsAttended(rec)){
-      // Never punched that day. Only ask if it hasn't already been answered.
-      if(rec&&(rec.absentReason||rec.reason))continue;
-      return{date:key,status:'Absent'};
+    if(isWeekOff(d)||isHoliday(key)){
+      // An off-day neither breaks nor extends an absent block. A punched-IN-but-never-OUT
+      // off-day still needs its reason (it only earns half an extra day).
+      if(recNoOut(rec)&&!rec.noOutReason){const r0=finishRun();if(r0)return r0;return{date:key,dates:[key],status:'NoOut'};}
+      continue;
     }
+    if(!recIsAttended(rec)){
+      // Never punched that day. Already answered -> closes any block being collected.
+      if(rec&&(rec.absentReason||rec.reason)){const r1=finishRun();if(r1)return r1;continue;}
+      run.push(key);
+      continue;
+    }
+    // Attended day: first hand back any absent block that came before it.
+    const r2=finishRun();if(r2)return r2;
+    if(recNoOut(rec)&&!rec.noOutReason)return{date:key,dates:[key],status:'NoOut'};
     const _pf=getDayFlags(rec,staff);const needs=(_pf.isLate||_pf.isEarlyOut||rec.status==='Half Day');
-    if(needs&&!rec.reason&&!rec.lateReason&&!rec.earlyOutReason&&!rec.absentReason)return{date:key,status:rec.status};
+    if(needs&&!rec.reason&&!rec.lateReason&&!rec.earlyOutReason&&!rec.absentReason&&!rec.noOutReason)return{date:key,dates:[key],status:rec.status};
   }
-  return null;
+  return finishRun();
 }
 // Bands are % of the staff member's OWN shift length.
 // Configurable now via Settings → Timing Rules (settings.absentPct / settings.fullDayPct).
@@ -4449,6 +4524,8 @@ function reasonSummary(rec){
   if(rec.lateReason)parts.push('Late: '+rec.lateReason);
   if(rec.earlyOutReason)parts.push('Early: '+rec.earlyOutReason);
   if(rec.absentReason)parts.push('Absent: '+rec.absentReason);
+  if(rec.noOutReason)parts.push('No OUT: '+rec.noOutReason);
+  else if(recNoOut(rec))parts.push('No OUT punch');
   if(!parts.length&&rec.reason)parts.push(rec.reason);
   return parts.join(' | ');
 }
@@ -4485,7 +4562,7 @@ function fmtWorked(rec){return fmtHM(workedMinutes(rec));}
 function getDayFlags(rec,staff){
   const f={isLate:false,isOvertime:false,isEarlyOut:false,isHalfDay:false};
   if(!rec||!recIsAttended(rec))return f;
-  const st=rec.status;
+  const st=effStatus(rec);
   const settings=getSettings();
   const shiftIn=(staff&&staff.shiftIn)||'09:00',shiftOut=(staff&&staff.shiftOut)||'18:00';
   const manual=rec.manual===true;
@@ -4523,7 +4600,7 @@ function buildStatusText(rec,fl){
   const base=rec.status||'Present';
   if(base==='Absent'||base==='Leave')return base;
   const parts=[];
-  if(fl.isHalfDay)parts.push('Half Day');
+  if(fl.isHalfDay)parts.push(recNoOut(rec)?'Half Day (No OUT)':'Half Day');
   if(fl.isLate)parts.push('Late');
   if(fl.isEarlyOut)parts.push('Early Out');
   if(fl.isOvertime)parts.push('Overtime');
