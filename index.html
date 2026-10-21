@@ -266,6 +266,11 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 .stat-card{background:var(--surface2);border:1px solid var(--blush3);border-radius:var(--radius-sm);padding:14px;text-align:center;}
 .stat-num{font-family:"Cormorant Garamond",serif;font-size:38px;font-weight:700;line-height:1;}
 .stat-lbl{font-size:10px;color:var(--text3);margin-top:3px;text-transform:uppercase;letter-spacing:0.5px;}
+.stat-click{cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .12s;}
+.stat-click:active{transform:scale(.97);}
+.stat-go{font-size:10px;color:var(--text3);margin-top:5px;letter-spacing:.3px;}
+.dl-chip{margin-left:auto;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+.dl-empty{text-align:center;color:var(--text3);font-size:13px;padding:22px 8px;}
 .stat-num.g{color:var(--green)}.stat-num.r{color:var(--red)}.stat-num.o{color:var(--orange)}.stat-num.b{color:var(--blue)}
 .staff-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--blush2);}
 .staff-item:last-child{border-bottom:none;padding-bottom:0;}
@@ -644,10 +649,10 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   <!-- DASHBOARD -->
   <div class="admin-scroll" id="tabDash">
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-num g" id="sPresent">0</div><div class="stat-lbl">Present Today</div></div>
-      <div class="stat-card"><div class="stat-num r" id="sAbsent">0</div><div class="stat-lbl">Absent</div></div>
-      <div class="stat-card"><div class="stat-num o" id="sLate">0</div><div class="stat-lbl">Late Today</div></div>
-      <div class="stat-card"><div class="stat-num b" id="sTotal">0</div><div class="stat-lbl">Total Staff</div></div>
+      <div class="stat-card stat-click" role="button" tabindex="0" onclick="openDashList('present')" onkeydown="if(event.key==='Enter')openDashList('present')"><div class="stat-num g" id="sPresent">0</div><div class="stat-lbl">Present Today</div><div class="stat-go">Tap to view ›</div></div>
+      <div class="stat-card stat-click" role="button" tabindex="0" onclick="openDashList('absent')" onkeydown="if(event.key==='Enter')openDashList('absent')"><div class="stat-num r" id="sAbsent">0</div><div class="stat-lbl">Absent</div><div class="stat-go">Tap to view ›</div></div>
+      <div class="stat-card stat-click" role="button" tabindex="0" onclick="openDashList('late')" onkeydown="if(event.key==='Enter')openDashList('late')"><div class="stat-num o" id="sLate">0</div><div class="stat-lbl">Late Today</div><div class="stat-go">Tap to view ›</div></div>
+      <div class="stat-card stat-click" role="button" tabindex="0" onclick="openDashList('total')" onkeydown="if(event.key==='Enter')openDashList('total')"><div class="stat-num b" id="sTotal">0</div><div class="stat-lbl">Total Staff</div><div class="stat-go">Tap to view ›</div></div>
     </div>
     <div class="card">
       <div class="sec-title">📈 Last 14 Days — Attendance Trend</div>
@@ -920,6 +925,14 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <button class="btn btn-outline" onclick="capturePhoto()">📸 Capture (<span id="capNum">0</span>/5)</button>
     <button class="btn btn-primary" id="saveStaffBtn" onclick="saveStaff()">💾 Save Staff</button>
     <button class="btn btn-secondary" onclick="closeModal('staffModal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-ov" id="dashListModal" onclick="if(event.target===this)closeModal('dashListModal')">
+  <div class="modal">
+    <div class="modal-title"><span id="dlTitle">Staff</span><button class="modal-close" onclick="closeModal('dashListModal')">✕</button></div>
+    <div id="dlSub" style="font-size:12px;color:var(--text3);margin:-12px 0 12px"></div>
+    <div id="dlBody"></div>
   </div>
 </div>
 
@@ -4332,7 +4345,71 @@ function renderDashCharts(){
   try{renderTodayDonut();}catch(e){console.warn('donut chart',e);}
   try{renderStaffRankChart();}catch(e){console.warn('rank chart',e);}
 }
-function updateDashStats(){const today=toKey(new Date()),att=getAtt().filter(a=>a.date===today),staff=getActiveStaff(),present=att.filter(a=>a.status!=='Absent').length,late=att.filter(a=>getDayFlags(a,staff.find(x=>x.id===a.staffId)).isLate).length;document.getElementById('sPresent').textContent=present;document.getElementById('sAbsent').textContent=Math.max(0,staff.length-present);document.getElementById('sLate').textContent=late;document.getElementById('sTotal').textContent=staff.length;renderDashCharts();}
+function dashTodayData(){
+  // ONE source for the four dashboard cards AND the lists behind them,
+  // so a number on a card always equals the number of names in its list.
+  const todayKey=toKey(new Date()),allAtt=getAtt(),staff=getActiveStaff();
+  const byId={};staff.forEach(x=>{byId[x.id]=x;});
+  const isOff=isWeekOff(new Date())||isHoliday(todayKey);
+  const presentRecs=allAtt.filter(a=>a.date===todayKey&&a.status!=='Absent'&&a.status!=='Leave'&&byId[a.staffId]);
+  const presentIds={};presentRecs.forEach(a=>{presentIds[a.staffId]=true;});
+  const lateRecs=presentRecs.filter(a=>getDayFlags(a,byId[a.staffId]).isLate);
+  const absentStaff=isOff?[]:staff.filter(x=>!presentIds[x.id]&&staffActiveOn(x,todayKey,allAtt));
+  return{todayKey,isOff,staff,byId,presentRecs,lateRecs,absentStaff,allAtt};
+}
+function updateDashStats(){
+  const d=dashTodayData();
+  document.getElementById('sPresent').textContent=d.presentRecs.length;
+  document.getElementById('sAbsent').textContent=d.absentStaff.length;
+  document.getElementById('sLate').textContent=d.lateRecs.length;
+  document.getElementById('sTotal').textContent=d.staff.length;
+  renderDashCharts();
+}
+let _dlNames=[];
+function openDashList(kind){
+  if(kind==='total'){aTab('staff');return;}          // the Staff tab IS the full staff screen
+  const d=dashTodayData();
+  const avatar=x=>'<div class="staff-av">'+(x.photo?'<img src="'+x.photo+'">':(x.name[0]||'?').toUpperCase())+'</div>';
+  const row=(x,sub,chip,chipCss)=>{
+    _dlNames.push(x.name);
+    return '<div class="staff-item" style="cursor:pointer" onclick="dashListGo('+(_dlNames.length-1)+')">'+avatar(x)+
+      '<div class="staff-info"><div class="staff-name">'+escHtml(x.name)+'</div><div class="staff-role">'+sub+'</div></div>'+
+      '<span class="dl-chip" style="'+chipCss+'">'+chip+'</span></div>';
+  };
+  const G='background:var(--green-bg);color:var(--green)',O='background:var(--orange-bg);color:var(--orange)',R='background:var(--red-bg);color:var(--red)';
+  _dlNames=[];
+  let title='',html='',count=0;
+  if(kind==='present'){
+    title='✅ Present Today';
+    const recs=d.presentRecs.slice().sort((a,b)=>String(a.inTime||'').localeCompare(String(b.inTime||'')));
+    count=recs.length;
+    html=recs.map(a=>{const x=d.byId[a.staffId],fl=getDayFlags(a,x);
+      const sub='IN '+escHtml((a.inTime||'–').slice(0,5))+' · OUT '+escHtml(a.outTime?a.outTime.slice(0,5):'not yet');
+      return row(x,sub,fl.isLate?'Late':'On time',fl.isLate?O:G);}).join('');
+  }else if(kind==='late'){
+    title='⏰ Late Today';
+    const recs=d.lateRecs.slice().sort((a,b)=>timeDiffMin(d.byId[b.staffId].shiftIn||'09:00',b.inTime||'00:00')-timeDiffMin(d.byId[a.staffId].shiftIn||'09:00',a.inTime||'00:00'));
+    count=recs.length;
+    html=recs.map(a=>{const x=d.byId[a.staffId],mins=a.inTime?timeDiffMin(x.shiftIn||'09:00',a.inTime):0;
+      return row(x,'IN '+escHtml((a.inTime||'–').slice(0,5))+' · shift '+escHtml(x.shiftIn||'09:00'),mins>0?(mins<60?mins+'m':fmtHM(mins))+' late':'Late',O);}).join('');
+  }else{
+    title='❌ Absent Today';
+    const list=d.absentStaff.slice().sort((a,b)=>a.name.localeCompare(b.name));
+    count=list.length;
+    html=list.map(x=>{const lv=d.allAtt.find(a=>a.staffId===x.id&&a.date===d.todayKey&&a.status==='Leave');
+      return row(x,'Shift '+escHtml(x.shiftIn||'09:00')+' – '+escHtml(x.shiftOut||'18:00'),lv?'On leave':'Not punched',lv?O:R);}).join('');
+  }
+  document.getElementById('dlTitle').textContent=title+' ('+count+')';
+  document.getElementById('dlSub').textContent='Tap a name to open that staff member\'s report';
+  if(!count)html='<div class="dl-empty">'+(kind==='absent'&&d.isOff?'Today is a Week Off / Holiday — nobody is marked absent.':'No staff in this list right now.')+'</div>';
+  document.getElementById('dlBody').innerHTML=html;
+  openModal('dashListModal');
+}
+function dashListGo(i){
+  const name=_dlNames[i];if(!name)return;
+  closeModal('dashListModal');
+  goToStaffReport(name);
+}
 
 // ══════════════════════════════════════════════
 // NAVIGATION

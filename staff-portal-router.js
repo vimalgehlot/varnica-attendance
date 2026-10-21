@@ -141,7 +141,7 @@ router.get('/me', (req, res) => {
     // (e.g. has outTime), since either source could be the fresher one depending
     // on sync timing. This is what fixes an OUT-punch sometimes not showing up.
     function completeness(r) {
-      return (r.inTime ? 1 : 0) + (r.outTime ? 1 : 0) + (r.reason ? 1 : 0) + (r.absentReason ? 1 : 0) + (r.earlyOutReason ? 1 : 0);
+      return (r.inTime ? 1 : 0) + (r.outTime ? 1 : 0) + (r.reason ? 1 : 0) + (r.absentReason ? 1 : 0) + (r.earlyOutReason ? 1 : 0) + (r.lateReason ? 1 : 0) + (r.noOutReason ? 1 : 0);
     }
     function betterOf(a, b) {
       if (!a) return b;
@@ -158,6 +158,17 @@ router.get('/me', (req, res) => {
       if (a && String(a.staffId) === String(claim.staffId) && a.date) map[a.date] = betterOf(map[a.date], a);
     });
 
+    // First day this person actually attended (over ALL history, not just the month asked for).
+    // The portal needs it so that days BEFORE a new staff member's first punch are not shown as Absent —
+    // same rule as the admin app.
+    function isAttended(r) {
+      if (!r) return false;
+      if (r.inTime) return true;
+      return ['Present', 'Late', 'Half Day', 'Early Out', 'Overtime'].indexOf(r.status) >= 0;
+    }
+    let firstPunch = '';
+    Object.keys(map).sort().forEach(d => { if (!firstPunch && isAttended(map[d])) firstPunch = d; });
+
     const from = req.query.from, to = req.query.to;
     let records = Object.keys(map).map(d => map[d]);
     if (from) records = records.filter(r => r.date >= from);
@@ -171,8 +182,15 @@ router.get('/me', (req, res) => {
       inTime: r.inTime || '',
       outTime: r.outTime || '',
       hours: r.hours || 0,
+      // 'reason' kept for older copies of the portal page; the new page builds its own
+      // remark line from the individual reason fields below (same as the admin report).
       reason: r.reason || r.earlyOutReason || r.absentReason || '',
-      manual: r.manual === true
+      lateReason: r.lateReason || '',
+      earlyOutReason: r.earlyOutReason || '',
+      absentReason: r.absentReason || '',
+      noOutReason: r.noOutReason || '',
+      manual: r.manual === true,
+      statusLocked: r.statusLocked === true
     }));
 
     const st = data.settings || {};
@@ -182,6 +200,7 @@ router.get('/me', (req, res) => {
 
     res.json({
       ok: true,
+      rulesVersion: 2,
       showSalary,
       staff: {
         id: staff.id,
@@ -192,10 +211,16 @@ router.get('/me', (req, res) => {
         shiftIn: staff.shiftIn || '09:00',
         shiftOut: staff.shiftOut || '18:00',
         pf: showSalary ? staff.pf : 0,
-        esi: showSalary ? staff.esi : 0
+        esi: showSalary ? staff.esi : 0,
+        joinDate: staff.joinDate || '',
+        leftDate: staff.leftDate || '',
+        gaps: staff.gaps || [],
+        addedOn: staff.addedOn || '',
+        firstPunch
       },
       settings: {
         grace: st.grace, halfDay: st.halfDay, earlyOut: st.earlyOut,
+        absentPct: st.absentPct, fullDayPct: st.fullDayPct, halfDayPct: st.halfDayPct,
         weekOff: st.weekOff, holidays: st.holidays || [],
         pfRate: showSalary ? st.pfRate : 0,
         esiRate: showSalary ? st.esiRate : 0,

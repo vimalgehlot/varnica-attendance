@@ -147,7 +147,7 @@ td{padding:8px 6px;border-bottom:1px solid var(--blush2);vertical-align:top;}
         <div class="sec-t">📅 Day-wise Detail</div>
         <div style="overflow-x:auto">
           <table>
-            <thead><tr><th>Date</th><th>Status</th><th>IN</th><th>OUT</th></tr></thead>
+            <thead><tr><th>Date</th><th>Status</th><th>IN</th><th>OUT</th><th>Hours</th></tr></thead>
             <tbody id="dayRows"></tbody>
           </table>
         </div>
@@ -166,91 +166,293 @@ let TOKEN=sessionStorage.getItem('vjsp_token')||'';
 let periodMode='this';
 
 // ══════════════════════════════════════════════
-// SALARY RULES — must stay identical to the admin app
+// SALARY & ATTENDANCE RULES — AUTO-COPIED from the admin app (index.html).
+// Do NOT edit by hand: change the rules in index.html, then re-copy these functions,
+// otherwise a staff member's portal will show different numbers from the admin report.
 // ══════════════════════════════════════════════
+var NEW_RULES_FROM='2026-10-01';
+const HALFDAY_MIN_PCT=0.50;
+const FULLDAY_MIN_PCT=0.90;
+let PORTAL_SETTINGS={};
+const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],pfRate:12,esiRate:0.75,esiCeiling:21000,absentPct:30,fullDayPct:90,halfDayPct:70},PORTAL_SETTINGS||{});
 function toKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function addDaysToKey(dateStr,delta){const d=new Date(dateStr+'T00:00:00');d.setDate(d.getDate()+delta);return toKey(d);}
-function getCalendarDaysInMonth(ym){const p=ym.split('-').map(Number);return new Date(p[0],p[1],0).getDate();}
+function getCalendarDaysInMonth(ym){const[y,m]=ym.split('-').map(Number);return new Date(y,m,0).getDate();}
+function getDatesInRange(from,to){const dates=[];let cur=new Date(from+'T00:00:00');const end=new Date(to+'T00:00:00');while(cur<=end){dates.push(toKey(cur));cur=new Date(cur.getTime()+86400000);}return dates;}
+function timeDiffMin(a,b){const[ah,am]=a.split(':').map(Number);const[bh,bm]=b.split(':').map(Number);return(bh*60+bm)-(ah*60+am);}
+function safeHours(inT,outT){
+  // Returns hours, handling an OUT time that falls after midnight.
+  // Returns null when the data cannot be trusted.
+  if(!inT||!outT)return null;
+  let m=timeDiffMin(inT,outT);
+  if(m<0)m+=24*60;                 // crossed midnight
+  if(m<=0||m>20*60)return null;    // still impossible — bad data
+  return m/60;
+}
+function getStaffShiftHours(staff){
+  // Length of this staff member's own fixed shift, in hours
+  const fallback=(getSettings().halfDay||4)*2;
+  if(!staff||!staff.shiftIn||!staff.shiftOut)return fallback;
+  const a=staff.shiftIn.split(':').map(Number),b=staff.shiftOut.split(':').map(Number);
+  if(a.length<2||b.length<2||isNaN(a[0])||isNaN(b[0]))return fallback;
+  let mins=(b[0]*60+(b[1]||0))-(a[0]*60+(a[1]||0));
+  if(mins<=0)mins+=24*60;            // overnight shift
+  const hrs=mins/60;
+  return (hrs>0&&hrs<=24)?hrs:fallback;
+}
+function classifyOutStatus(staff,hrs,earlyMin,timeStr){
+  // Single place that decides the OUT-punch status, used by every path so
+  // the punch screen, the reason popup and manual entry can never disagree.
+  const settings=getSettings();
+  const shiftHrs=getStaffShiftHours(staff);
+  const shiftEnd=staff.shiftOut||'18:00';
+  const absentPct=(typeof settings.absentPct==='number'?settings.absentPct:HALFDAY_MIN_PCT*100)/100;
+  const fullDayPct=(typeof settings.fullDayPct==='number'?settings.fullDayPct:FULLDAY_MIN_PCT*100)/100;
+  // halfDayPct sits BETWEEN absentPct and fullDayPct. Below it = Half Day (half pay).
+  // Between halfDayPct and fullDayPct = Early Out — flagged, reason needed, but FULL day pay.
+  // Defaults to fullDayPct itself, so out of the box this middle band is empty and
+  // behaviour is unchanged (the old 50–90% = always Half Day rule) until configured.
+  let halfDayPct=(typeof settings.halfDayPct==='number'?settings.halfDayPct:settings.fullDayPct)/100;
+  if(halfDayPct>fullDayPct)halfDayPct=fullDayPct; // safety: never let it exceed Full Day %
+  if(halfDayPct<absentPct)halfDayPct=absentPct;   // safety: never let it dip below Absent %
+  if(hrs<shiftHrs*absentPct){
+    // Worked less than the Absent-cutoff % of shift — e.g. punched in and out 2 minutes later.
+    return{status:'Absent',warningType:'early'};
+  }
+  if(hrs<shiftHrs*halfDayPct){
+    return{status:'Half Day',warningType:'early'};
+  }
+  if(hrs<shiftHrs*fullDayPct){
+    // Short of a full day but above the Half Day cutoff — counted as Early Out (full pay).
+    return{status:'Early Out',warningType:'early'};
+  }
+  if(earlyMin>settings.earlyOut)return{status:'Early Out',warningType:'early'};
+  if(timeDiffMin(shiftEnd,timeStr)>30)return{status:'Overtime',warningType:null};
+  return{status:'Present',warningType:null};
+}
+function recIsAttended(rec){
+  // A punch counts, and so does a status the admin set by hand on a day with no punch.
+  // Without this second case, changing a cell from Absent to Present in the matrix
+  // had no effect on the report, because the report only looked at inTime.
+  // The list is kept inside the function on purpose: a top-level const is not hoisted,
+  // so it would throw if this ever ran during initial page evaluation.
+  if(!rec)return false;
+  if(rec.inTime)return true;
+  return ['Present','Late','Half Day','Early Out','Overtime'].indexOf(rec.status)>=0;
+}
+function recNoOut(rec){
+  // IN punch, no OUT punch, and that day is already over (today is still in progress).
+  // An admin's explicit status chosen in the Matrix (statusLocked) is never overridden.
+  if(!rec||!rec.inTime||rec.outTime)return false;
+  if(!rec.date||rec.date<NEW_RULES_FROM||rec.date>=toKey(new Date()))return false;
+  if(rec.status==='Absent'||rec.status==='Leave'||rec.statusLocked===true)return false;
+  return true;
+}
+function effStatus(rec){
+  if(!rec)return'';
+  return recNoOut(rec)?'Half Day':rec.status;
+}
+function offDayFraction(rec,staff,dateKey){
+  // How much of an EXTRA day a punch on a Week-Off / Holiday earns: 0, 0.5 or 1.
+  if(!rec)return 0;
+  if(dateKey<NEW_RULES_FROM)return 1;                       // old rule: always a full extra day
+  if(rec.statusLocked===true){const ls=rec.status;return ls==='Half Day'?0.5:((ls==='Absent'||ls==='Leave')?0:1);}
+  if(rec.inTime&&rec.outTime){
+    const hrs=safeHours(rec.inTime,rec.outTime);
+    if(hrs===null)return 1;                                  // unreadable times — keep old behaviour
+    const c=classifyOutStatus(staff,hrs,timeDiffMin(rec.outTime,staff.shiftOut||'18:00'),rec.outTime).status;
+    return c==='Absent'?0:(c==='Half Day'?0.5:1);
+  }
+  if(rec.inTime&&!rec.outTime)return(dateKey<toKey(new Date()))?0.5:1;   // no OUT once the day is over = half
+  const st=rec.status;                                       // hand-set, no punch times
+  return st==='Half Day'?0.5:((st==='Absent'||st==='Leave')?0:1);
+}
+function getDayFlags(rec,staff){
+  const f={isLate:false,isOvertime:false,isEarlyOut:false,isHalfDay:false};
+  if(!rec||!recIsAttended(rec))return f;
+  const st=effStatus(rec);
+  const settings=getSettings();
+  const shiftIn=(staff&&staff.shiftIn)||'09:00',shiftOut=(staff&&staff.shiftOut)||'18:00';
+  const manual=rec.manual===true;
+  const statusLate=(st==='Late'),statusOT=(st==='Overtime'),statusEO=(st==='Early Out'),statusHalf=(st==='Half Day');
+  // LATE — decided by IN time alone
+  if(rec.inTime)f.isLate=timeDiffMin(shiftIn,rec.inTime)>settings.grace;
+  else f.isLate=statusLate;
+  // OT / EARLY OUT / HALF DAY — decided by OUT time and hours worked
+  const hrs=(rec.inTime&&rec.outTime)?safeHours(rec.inTime,rec.outTime):null;
+  if(hrs!==null&&staff){
+    const earlyMin=timeDiffMin(rec.outTime,shiftOut);
+    const c=classifyOutStatus(staff,hrs,earlyMin,rec.outTime);
+    f.isHalfDay=(c.status==='Half Day');
+    if(!f.isHalfDay&&c.status!=='Absent'){
+      f.isEarlyOut=(c.status==='Early Out')&&earlyMin>0;
+      f.isOvertime=timeDiffMin(shiftOut,rec.outTime)>30;
+    }
+  }else{
+    f.isHalfDay=statusHalf;f.isOvertime=statusOT;f.isEarlyOut=statusEO;
+  }
+  // An admin's hand-set status is respected on top of what the times say
+  if(manual){
+    if(statusLate)f.isLate=true;
+    if(statusOT&&!f.isHalfDay)f.isOvertime=true;
+    if(statusEO&&!f.isHalfDay)f.isEarlyOut=true;
+    if(statusHalf)f.isHalfDay=true;
+  }
+  if(statusHalf)f.isHalfDay=true;
+  if(f.isHalfDay){f.isOvertime=false;f.isEarlyOut=false;}
+  return f;
+}
+function buildStatusText(rec,fl){
+  // Display text only — e.g. "Late + Overtime". Never used for counting.
+  if(!rec)return'';
+  const base=rec.status||'Present';
+  if(base==='Absent'||base==='Leave')return base;
+  const parts=[];
+  if(fl.isHalfDay)parts.push(recNoOut(rec)?'Half Day (No OUT)':'Half Day');
+  if(fl.isLate)parts.push('Late');
+  if(fl.isEarlyOut)parts.push('Early Out');
+  if(fl.isOvertime)parts.push('Overtime');
+  return parts.length?parts.join(' + '):base;
+}
+function dayFlagFields(rec,staff){
+  const fl=getDayFlags(rec,staff);
+  return{statusText:buildStatusText(rec,fl),isLate:fl.isLate,isOvertime:fl.isOvertime,isEarlyOut:fl.isEarlyOut};
+}
+function fmtHM(mins){
+  if(mins===null||mins===undefined||isNaN(mins)||mins<=0)return'-';
+  const t=Math.round(mins);return Math.floor(t/60)+'h '+(t%60)+'m';
+}
+function workedMinutes(rec){
+  if(!rec)return null;
+  if(rec.inTime&&rec.outTime){
+    let m=timeDiffMin(rec.inTime,rec.outTime);if(m<0)m+=24*60;
+    if(m>0&&m<=20*60)return m;
+  }
+  if(rec.hours)return Math.round(rec.hours*60);
+  return null;
+}
+function fmtWorked(rec){return fmtHM(workedMinutes(rec));}
+function reasonSummary(rec){
+  // Combines Late / Early Out / Absent reasons into one readable line instead of
+  // letting one overwrite another. Old records that only ever had the generic
+  // .reason field (before this fix) still show correctly via the fallback below.
+  if(!rec)return'';
+  const parts=[];
+  if(rec.lateReason)parts.push('Late: '+rec.lateReason);
+  if(rec.earlyOutReason)parts.push('Early: '+rec.earlyOutReason);
+  if(rec.absentReason)parts.push('Absent: '+rec.absentReason);
+  if(rec.noOutReason)parts.push('No OUT: '+rec.noOutReason);
+  else if(recNoOut(rec))parts.push('No OUT punch');
+  if(!parts.length&&rec.reason)parts.push(rec.reason);
+  return parts.join(' | ');
+}
+function isWeekOff(date){return date.getDay()===parseInt(getSettings().weekOff||0);}
+function isHoliday(ds){return(getSettings().holidays||[]).some(h=>h.date===ds);}
 function getDailyRate(staff,dateStr){
   if(!staff.salary)return 0;
   if(staff.salaryBasis==='yearly')return staff.salary/365;
   return staff.salary/getCalendarDaysInMonth(dateStr.substring(0,7));
 }
-function isWeekOff(date,st){return date.getDay()===parseInt(st.weekOff||0);}
-function isHoliday(ds,st){return (st.holidays||[]).some(h=>h.date===ds);}
-function isAbsentWorkDay(dateStr,recMap,st){
-  // Must match the admin app: a day the admin marked Present by hand has no punch
-  // time, and must NOT count as an absence for the sandwich rule.
-  if(isWeekOff(new Date(dateStr+'T00:00:00'),st)||isHoliday(dateStr,st))return false;
-  return !recIsAttended(recMap[dateStr]);
+function isAbsentWorkDay(staffId,dateStr,att){
+  // True only if dateStr is a normal working day (not week-off/holiday) AND the staff
+  // member did not attend. Must use recIsAttended, not just inTime — otherwise a day
+  // the admin marked Present by hand (which has no punch time) counts as an absence
+  // and wrongly triggers the sandwich rule on the neighbouring week-off.
+  if(isWeekOff(new Date(dateStr+'T00:00:00'))||isHoliday(dateStr))return false;
+  const rec=att.find(a=>a.staffId===staffId&&a.date===dateStr);
+  return !recIsAttended(rec);
 }
-function isSandwichedOff(dateStr,recMap,st){
-  return isAbsentWorkDay(addDaysToKey(dateStr,-1),recMap,st)&&isAbsentWorkDay(addDaysToKey(dateStr,1),recMap,st);
+function isSandwichedOff(staffId,dateStr,att){
+  // Sandwich rule: the calendar day immediately before AND immediately after must BOTH be a
+  // normal working day where the staff was Absent, for this week-off/holiday to become unpaid.
+  return isAbsentWorkDay(staffId,addDaysToKey(dateStr,-1),att)&&isAbsentWorkDay(staffId,addDaysToKey(dateStr,1),att);
 }
-function getDatesInRange(from,to){
-  const out=[];let cur=new Date(from+'T00:00:00');const end=new Date(to+'T00:00:00');
-  while(cur<=end){out.push(toKey(cur));cur=new Date(cur.getTime()+86400000);}
-  return out;
+// Staff start / left dates — same rule as the admin app (staffStartKey / staffActiveOn);
+// the server sends firstPunch because the portal only downloads one month of records.
+function staffStartKey(st){
+  if(!st)return'';
+  if(st.joinDate)return st.joinDate;
+  if(st.firstPunch)return st.firstPunch;
+  if(st.addedOn){const d=new Date(st.addedOn);if(!isNaN(d))return toKey(d);}
+  return'9999-12-31';
 }
-function recIsAttended(rec){
-  // Must match the admin app exactly. A punch counts, and so does a status the
-  // admin set by hand on a day with no punch — otherwise the portal shows a day
-  // as Absent that the admin's report shows as Present.
-  if(!rec)return false;
-  if(rec.inTime)return true;
-  return ['Present','Late','Half Day','Early Out','Overtime'].indexOf(rec.status)>=0;
+function staffActiveOn(st,key){
+  if(!st)return true;
+  if(key<staffStartKey(st))return false;
+  if(st.leftDate&&key>st.leftDate)return false;
+  if(st.gaps&&st.gaps.some(g=>key>g[0]&&key<g[1]))return false;
+  return true;
 }
 function computeSummary(staff,st,records,from,to){
-  const recMap={};records.forEach(r=>{recMap[r.date]=r;});
+  PORTAL_SETTINGS=st||{};
+  const s=Object.assign({},staff);
+  const att=(records||[]).map(r=>Object.assign({staffId:s.id},r));
+  // Old server without firstPunch: fall back to the earliest attended day we can see
+  if(s.firstPunch===undefined&&!s.joinDate){
+    const ds=att.filter(recIsAttended).map(r=>r.date).sort();
+    s.firstPunch=ds.length?ds[0]:'';
+    if(!s.firstPunch&&!s.addedOn)s.firstPunch='0000-00-00';
+  }
   const dates=getDatesInRange(from,to);
-  let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,workDays=0;
-  let extraDays=0,paidOffDays=0,unpaidOffDays=0,grossEarned=0;
-  const rows=[];
-  dates.forEach(d=>{
-    const isWO=isWeekOff(new Date(d+'T00:00:00'),st),isHol=isHoliday(d,st);
-    const rec=recMap[d];
-    const rate=getDailyRate(staff,d);
-    if(isWO||isHol){
-      // Same rule as the admin app — a hand-set Present on a week-off has no punch time
-      const worked=recIsAttended(rec);
-      const sandwiched=!worked&&isSandwichedOff(d,recMap,st);
-      if(sandwiched){
-        unpaidOffDays++;
-        rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',reason:'Unpaid (absent both sides)'});
-      }else{
-        paidOffDays++;grossEarned+=rate;
-        if(worked){
-          extraDays++;grossEarned+=rate;
-          rows.push({date:d,status:'Extra Day',inTime:rec.inTime,outTime:rec.outTime||'-',reason:rec.reason||'Worked on off-day'});
+  let present=0,absent=0,late=0,halfDay=0,overtime=0,earlyOut=0,flaggedDays=0,workDays=0,extraDays=0,grossEarned=0,extraPay=0,unpaidOffDays=0,paidOffDays=0;const rows=[];
+    dates.forEach(d=>{
+      if(!staffActiveOn(s,d,att))return;   // before first punch / after last working day
+      const isWO=isWeekOff(new Date(d+'T00:00:00')),isHol=isHoliday(d);
+      const rec=att.find(a=>a.staffId===s.id&&a.date===d);
+      const dailyRate=getDailyRate(s,d);
+      if(isWO||isHol){
+        // Must use recIsAttended: a week-off the admin marked Present by hand has no
+        // punch time, and would otherwise be treated as an ordinary unworked off-day.
+        const worked=recIsAttended(rec);
+        // Sandwich rule only forfeits the REST-DAY credit of an unworked off-day
+        const sandwiched=!worked&&isSandwichedOff(s.id,d,att);
+        if(sandwiched){
+          unpaidOffDays++;
+          rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:'⚠️ Unpaid — absent both sides'});
         }else{
-          rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',reason:''});
+          // Rest-day credit — every week-off/holiday counts here, worked or not
+          paidOffDays++;grossEarned+=dailyRate;
+          if(worked){
+            // Worked on it too → one ADDITIONAL day's pay on top of the rest-day credit
+            // From 1 Oct: the extra day is 0 / 0.5 / 1 depending on the hours actually worked
+            const frac=offDayFraction(rec,s,d);
+            if(frac>0){extraDays+=frac;extraPay+=Math.round(dailyRate*frac);grossEarned+=dailyRate*frac;}
+            rows.push({date:d,staffId:s.id,status:frac>0?'Extra Day':(isHol?'Holiday':'Week Off'),statusText:frac>0?(frac<1?'Extra Day (½)':'Extra Day'):'',extraFrac:frac,inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec)||(frac>0?'('+(isHol?'Holiday':'Week Off')+' — worked, '+(frac<1?'half':'full')+' extra day)':'('+(isHol?'Holiday':'Week Off')+' — punched but worked too little, no extra day)'),inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+          }else{
+            rows.push({date:d,status:isHol?'Holiday':'Week Off',inTime:'-',outTime:'-',hours:'-',reason:''});
+          }
         }
+        return;
       }
-      return;
-    }
-    workDays++;
-    if(!recIsAttended(rec)){
-      absent++;
-      rows.push({date:d,status:'Absent',inTime:'-',outTime:'-',reason:rec&&rec.reason?rec.reason:''});
-    }else{
-      if(rec.status==='Late')late++;
-      if(rec.status==='Half Day')halfDay++;
-      if(rec.status==='Overtime')overtime++;
-      if(rec.status==='Early Out')earlyOut++;
-      if(rec.status!=='Absent'&&rec.status!=='Half Day')present++;
-      grossEarned+=(rec.status==='Half Day')?rate*0.5:rate;
-      rows.push({date:d,status:rec.status||'Present',inTime:rec.inTime,outTime:rec.outTime||'-',reason:rec.reason||'',manual:rec.manual===true});
-    }
-  });
-  const totalPayingDays=present+halfDay*0.5+paidOffDays+extraDays;
-  const refDailyRate=dates.length?getDailyRate(staff,dates[0]):0;
-  const pfOn=staff.pf!==0;
-  const esiOn=staff.esi!==0&&staff.salary&&staff.salary<=(st.esiCeiling||21000);
-  const pfAmount=pfOn?Math.round(grossEarned*(st.pfRate||12)/100):0;
-  const esiAmount=esiOn?Math.round(grossEarned*(st.esiRate||0.75)/100):0;
-  const netPay=Math.round(grossEarned-pfAmount-esiAmount);
-  return{present,absent,late,halfDay,overtime,earlyOut,workDays,extraDays,paidOffDays,unpaidOffDays,
-    totalPayingDays,refDailyRate,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,rows};
+      workDays++;
+      if(!recIsAttended(rec)){absent++;rows.push({date:d,staffId:s.id,status:'Absent',inTime:'-',outTime:'-',hours:'-',reason:rec?.absentReason||'',manual:rec?.manual===true,inPhoto:'',outPhoto:'',hasInPhoto:false,hasOutPhoto:false});}
+      else{
+        const fl=getDayFlags(rec,s);
+        const es=effStatus(rec)||'Present';       // 'Half Day' when IN punched but OUT never punched
+        if(fl.isLate)late++;
+        if(es==='Half Day')halfDay++;
+        if(fl.isOvertime)overtime++;
+        if(fl.isEarlyOut)earlyOut++;
+        if(es!=='Absent'&&es!=='Half Day'&&(fl.isLate||fl.isOvertime||fl.isEarlyOut))flaggedDays++;
+        if(es!=='Absent'&&es!=='Half Day')present++;
+        grossEarned+=(es==='Half Day')?dailyRate*0.5:dailyRate;
+        rows.push({date:d,staffId:s.id,status:es,...dayFlagFields(rec,s),inTime:rec.inTime||'-',outTime:rec.outTime||'-',hours:fmtWorked(rec),reason:reasonSummary(rec),manual:rec.manual===true,inPhoto:rec.inPhoto||'',outPhoto:rec.outPhoto||'',hasInPhoto:rec.hasInPhoto===true,hasOutPhoto:rec.hasOutPhoto===true});
+      }
+    });
+    const settings=getSettings();
+    const payableDays=present+halfDay*0.5;
+    // Total Paying Days = every day-equivalent that actually contributed to Gross —
+    // present days + half-days(0.5 each) + paid week-off/holiday days + extra days worked (2 each, since they're double-paid).
+    // Multiplying this by the daily rate reproduces Gross exactly, so it's the number that makes Net Pay "make sense" at a glance.
+    const totalPayingDays=present+halfDay*0.5+paidOffDays+extraDays;
+    // A representative daily rate for display — based on the report's first date's month (constant for single-month reports, which is the normal case)
+    const refDailyRate=dates.length?getDailyRate(s,dates[0]):0;
+    const pfOn=s.pf!==0;const esiOn=s.esi!==0&&s.salary&&s.salary<=settings.esiCeiling;
+    const pfAmount=pfOn?Math.round(grossEarned*settings.pfRate/100):0;
+    const esiAmount=esiOn?Math.round(grossEarned*settings.esiRate/100):0;
+    let netPay=Math.round(grossEarned-pfAmount-esiAmount);
+    return{present,absent,late,halfDay,overtime,earlyOut,flaggedDays,workDays,extraDays,extraPay,paidOffDays,unpaidOffDays,
+      totalPayingDays,refDailyRate,grossEarned:Math.round(grossEarned),pfOn,esiOn,pfAmount,esiAmount,netPay,rows};
 }
 
 // ══════════════════════════════════════════════
@@ -262,6 +464,7 @@ function fmtDate(ds){
   return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})+' ('+d.toLocaleDateString('en-IN',{weekday:'short'})+')';
 }
 function statusColor(s){
+  s=String(s||'').split(' + ')[0].replace(/ \(.*$/,'');
   if(s==='Absent')return 'var(--red)';
   if(s==='Late'||s==='Early Out'||s==='Half Day')return 'var(--orange)';
   if(s==='Extra Day')return '#8B6A35';
@@ -324,7 +527,7 @@ async function loadData(){
   document.getElementById('loading').classList.remove('hidden');
   document.getElementById('content').classList.add('hidden');
   try{
-    const res=await fetch('/api/staff-portal/me?from='+r.from+'&to='+r.to,{headers:{'Authorization':'Bearer '+TOKEN}});
+    const res=await fetch('/api/staff-portal/me?from='+addDaysToKey(r.from,-1)+'&to='+addDaysToKey(r.to,1),{headers:{'Authorization':'Bearer '+TOKEN}});
     if(res.status===401){logout();showErr('Your session expired. Please enter your PIN again.');return;}
     const j=await res.json();
     if(!res.ok||!j.ok){document.getElementById('loading').textContent=j.error||'Could not load.';return;}
@@ -375,10 +578,11 @@ function render(j,r){
 
   document.getElementById('dayRows').innerHTML=s.rows.slice().reverse().map(function(row){
     return '<tr><td class="mono">'+fmtDate(row.date)+'</td>'+
-      '<td style="color:'+statusColor(row.status)+';font-weight:600">'+row.status+(row.manual?' <span title="Adjusted by admin" style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#5C4220;vertical-align:super"></span>':'')+
+      '<td style="color:'+statusColor(row.status)+';font-weight:600">'+(row.statusText||row.status)+(row.manual?' <span title="Adjusted by admin" style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#5C4220;vertical-align:super"></span>':'')+
       (row.reason?'<div class="rsn">'+String(row.reason).replace(/[<>&]/g,'')+'</div>':'')+'</td>'+
       '<td class="mono">'+(row.inTime||'-')+'</td>'+
-      '<td class="mono">'+(row.outTime||'-')+'</td></tr>';
+      '<td class="mono">'+(row.outTime||'-')+'</td>'+
+      '<td class="mono">'+(row.hours&&row.hours!=='-'?row.hours:'-')+'</td></tr>';
   }).join('');
 
   document.getElementById('loading').classList.add('hidden');
