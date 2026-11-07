@@ -1531,6 +1531,9 @@ async function init(){
   renderBirthdayBanner();
   prunePunchPhotos();
   prunePendingPhotos();
+  reviewSync();setInterval(reviewSync,20000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)reviewSync();});
+  window.addEventListener('online',reviewSync);
   cleanupPunchPhotosOnce();
   migrateExistingPhotos();
   await proactiveStorageCheck();
@@ -2504,6 +2507,69 @@ async function captureFail(){
   // Also upload to VPS as backup (fire-and-forget)
   try{uploadUnknownPhoto(failId,fullPhoto,1);}catch(e){}
   openPopup('errorPopup');updateApprBadge();
+  // Share with every device (admin can approve from any phone/PC). Retried by reviewSync() if it fails.
+  try{const rv=await compressPhoto(fullPhoto,480,0.6);reviewPushNew({id:failId,photo:rv,timestamp:now.toISOString(),date:toKey(now),time:now.toLocaleTimeString('en-IN',{hour12:false})});}catch(e){}
+}
+// ══ MANUAL REVIEW SHARED ACROSS DEVICES ══
+// The list lives on the server; this device keeps a copy (vj_pending) so it also works offline.
+const REVIEW_DEV=(()=>{try{let d=localStorage.getItem('vj_deviceId');if(!d){d='d'+Math.random().toString(36).slice(2,10);localStorage.setItem('vj_deviceId',d);}return d;}catch(e){return 'dx'+Math.random().toString(36).slice(2,8);}})();
+const _reviewPhotos={},_reviewBusy={};
+async function reviewApi(path,body){
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),8000);
+  try{
+    const r=await fetch('/api/review'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({bucket:TOOL_ID,by:REVIEW_DEV},body)),signal:ctl.signal});
+    if(!r.ok)return null;return await r.json();
+  }catch(e){return null;}finally{clearTimeout(t);}
+}
+async function reviewPushNew(item){
+  const r=await reviewApi('/add',{item});
+  if(r&&r.ok){const p=getPending(),e=p.find(x=>x.id===item.id);if(e){e.rs=1;setPending(p);}}
+}
+let _revSyncing=false;
+async function reviewSync(){
+  if(_revSyncing||!navigator.onLine)return;
+  _revSyncing=true;
+  try{
+    // 1. send what the server has not seen yet (new captures, approve/reject done offline)
+    const todo=getPending().filter(e=>!e.rs).map(e=>({id:e.id,status:e.status,staffId:e.staffId,photo:e.photo||'',timestamp:e.timestamp,date:e.date,time:e.time}));
+    const done={};
+    for(const e of todo){
+      const r=e.status==='pending'?await reviewApi('/add',{item:{id:e.id,photo:e.photo,timestamp:e.timestamp,date:e.date,time:e.time}})
+        :await reviewApi('/resolve',{id:e.id,status:e.status,staffId:e.staffId});
+      if(r&&r.ok)done[e.id]=1;
+    }
+    // 2. read the shared list
+    let items=null;
+    try{const r=await fetch('/api/review?bucket='+encodeURIComponent(TOOL_ID),{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&j.ok&&Array.isArray(j.items))items=j.items;}}catch(e){}
+    const p=getPending();
+    const sigBefore=p.filter(x=>x.status==='pending').map(x=>x.id).sort().join(',')+'|'+Object.keys(_reviewBusy).sort().join(',');
+    let added=0;
+    p.forEach(e=>{if(done[e.id])e.rs=1;});
+    if(items){
+      Object.keys(_reviewBusy).forEach(k=>delete _reviewBusy[k]);
+      items.forEach(sv=>{
+        const loc=p.find(x=>x.id===sv.id);
+        if(sv.status==='pending'||sv.status==='processing'){
+          if(sv.photo)_reviewPhotos[sv.id]=sv.photo;
+          if(sv.status==='processing')_reviewBusy[sv.id]=1;
+          if(!loc){p.push({id:sv.id,timestamp:sv.timestamp,date:sv.date,time:sv.time,status:'pending',rs:1});added++;}
+          else if(loc.status==='pending')loc.rs=1;
+        }else if(loc&&loc.status==='pending'){
+          // already approved/rejected on another device
+          loc.status=sv.status;if(sv.staffId)loc.staffId=sv.staffId;delete loc.photo;loc.rs=1;delete _reviewPhotos[sv.id];
+        }
+      });
+    }
+    setPending(p);
+    const sigAfter=p.filter(x=>x.status==='pending').map(x=>x.id).sort().join(',')+'|'+Object.keys(_reviewBusy).sort().join(',');
+    if(sigBefore!==sigAfter){
+      const tab=document.getElementById('tabAppr');
+      if(tab&&!tab.classList.contains('hidden'))renderApprovals();
+      if(added&&!isKioskMode())showToast('🔔 Naya Manual Review aaya ('+added+')');
+    }
+    updateApprBadge();
+  }catch(e){console.warn('[review sync]',e);}
+  finally{_revSyncing=false;}
 }
 // A weak connection used to lose this photo for good — try again (2s, 8s), like normal punch photos.
 function uploadUnknownPhoto(failId,fullPhoto,attempt){
@@ -2634,11 +2700,11 @@ function renderApprovals(){
   if(!pending.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">✅</div><p>No pending approvals</p></div>';return;}
   el.innerHTML=pending.map(p=>{
     const vpsUrl='/api/punch-photo/'+TOOL_ID+'/unknown_'+p.id+'.jpg';
-    const photoSrc=p.photo?p.photo:vpsUrl;
+    const photoSrc=p.photo?p.photo:(_reviewPhotos[p.id]||vpsUrl);
     const photoHtml=photoSrc
       ? `<img class="appr-photo" src="${photoSrc}" alt="Unknown face" onerror="this.onerror=null;this.src='${vpsUrl}';setTimeout(()=>{if(!this.complete||this.naturalWidth===0)this.style.display='none';},1500)">`
       : `<div class="appr-photo" style="background:var(--blush2);display:flex;align-items:center;justify-content:center;height:180px;color:var(--text3)"><span style="font-size:36px">👤</span></div>`;
-    return `<div class="appr-card">${photoHtml}<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div><div style="font-size:13px;font-weight:600">Unknown Face</div><div style="font-size:11px;color:var(--text3)">${p.date} at ${p.time}</div></div><span class="tag tag-warn">Pending</span></div><div class="ig"><label class="il">Assign to Staff</label><select class="if" id="as_${p.id}"><option value="">-- Select --</option>${staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('')}</select></div><div class="appr-actions"><button class="btn-approve" onclick="approveEntry('${p.id}')">✅ Approve</button><button class="btn-reject" onclick="rejectEntry('${p.id}')">❌ Reject</button></div></div>`;
+    return `<div class="appr-card">${photoHtml}<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div><div style="font-size:13px;font-weight:600">Unknown Face</div><div style="font-size:11px;color:var(--text3)">${p.date} at ${p.time}</div></div><span class="tag tag-warn">${_reviewBusy[p.id]?'Dusre device pe chal raha hai':'Pending'}</span></div><div class="ig"><label class="il">Assign to Staff</label><select class="if" id="as_${p.id}"><option value="">-- Select --</option>${staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('')}</select></div><div class="appr-actions"><button class="btn-approve" onclick="approveEntry('${p.id}')">✅ Approve</button><button class="btn-reject" onclick="rejectEntry('${p.id}')">❌ Reject</button></div></div>`;
   }).join('');
 }
 // Crop to a centred square, same look as a normal punch photo.
@@ -2670,7 +2736,8 @@ async function getReviewPhoto(e){
       if(dataUrl&&String(dataUrl).indexOf('data:image')===0)return await squarePhoto(dataUrl,360,0.82);
     }
   }catch(err){/* use the local copy below */}
-  return e.photo?await squarePhoto(e.photo,360,0.82):'';
+  const loc=e.photo||_reviewPhotos[e.id];
+  return loc?await squarePhoto(loc,360,0.82):'';
 }
 let _approving=false;
 async function approveEntry(id){
@@ -2680,7 +2747,13 @@ async function approveEntry(id){
   const e0=getPending().find(x=>x.id===id);
   if(!e0||e0.status!=='pending')return;
   _approving=true;
+  let claim=null;
   try{
+    // "I am handling this" — if another device already took it, stop here (no double punch).
+    if(navigator.onLine){
+      claim=await reviewApi('/claim',{id});
+      if(claim&&claim.claimed===false){showToast('⚠️ Ye entry dusre device se handle ho gayi / ho rahi hai. List refresh ho rahi hai.',5000);await reviewSync();renderApprovals();return;}
+    }
     // The punch belongs to the moment the face was SCANNED (e.g. 8:10) — not to the moment
     // the admin taps Approve (8:43) — and to that day, even if approved the next morning.
     const scanned=e0.timestamp?new Date(e0.timestamp):null;
@@ -2690,17 +2763,24 @@ async function approveEntry(id){
     const photo=await getReviewPhoto(e0);
     const r=doPunch(s,photo,at,true);
     if(r==='in'||r==='out'){
-      const p=getPending(),e=p.find(x=>x.id===id);if(e){e.status='approved';delete e.photo;}setPending(p);
+      const p=getPending(),e=p.find(x=>x.id===id);if(e){e.status='approved';e.staffId=sid;delete e.photo;delete e.rs;}setPending(p);
       renderApprovals();updateApprBadge();
+      reviewApi('/resolve',{id,status:'approved',staffId:sid}).then(rv=>{if(rv&&rv.ok){const q=getPending(),x=q.find(z=>z.id===id);if(x){x.rs=1;setPending(q);}}});
       const hhmm=at.toLocaleTimeString('en-IN',{hour12:false}).slice(0,5);
       showToast('✅ '+s.name+' — '+(r==='in'?'IN':'OUT')+' recorded at '+hhmm+(toKey(at)!==toKey(new Date())?' on '+toKey(at):''));
     }else if(r===false){
       showToast('❌ Could not save (storage full?) — the entry is still pending');
     }
     // r==='skip': doPunch already explained why; the entry stays pending so it can be rejected.
+    if(r!=='in'&&r!=='out'&&claim&&claim.claimed)reviewApi('/release',{id});
   }finally{_approving=false;}
 }
-function rejectEntry(id){const p=getPending(),e=p.find(x=>x.id===id);if(e){e.status='rejected';delete e.photo;}setPending(p);renderApprovals();updateApprBadge();showToast('Rejected');}
+async function rejectEntry(id){
+  const e0=getPending().find(x=>x.id===id);if(!e0||e0.status!=='pending')return;
+  let rr=null;if(navigator.onLine)rr=await reviewApi('/resolve',{id,status:'rejected'});
+  if(rr&&rr.applied===false){showToast('⚠️ Ye entry dusre device pe pehle hi handle ho chuki hai.',5000);await reviewSync();renderApprovals();return;}
+  const p=getPending(),e=p.find(x=>x.id===id);if(e){e.status='rejected';delete e.photo;if(rr&&rr.ok)e.rs=1;else delete e.rs;}setPending(p);renderApprovals();updateApprBadge();showToast('Rejected');
+}
 function updateApprBadge(){const c=getPending().filter(p=>p.status==='pending').length,b=document.getElementById('apprBadge');b.style.display=c?'inline-flex':'none';b.textContent=c;}
 
 // ══════════════════════════════════════════════
@@ -4497,7 +4577,7 @@ function dashListGo(i){
 function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(id==='punchPage'){document.querySelector('.nav-btn').classList.add('active');const ov=document.getElementById('scanOverlay');if(ov&&!mainStream)ov.classList.remove('hidden');}}
 function goAdmin(){curPin='';document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));document.getElementById('pinError').textContent='';document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('adminLoginPage').classList.add('active');}
 function adminLogout(){showPage('punchPage');}
-function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){
+function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();reviewSync();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){
     // Editable matrix is the only place attendance is changed by hand.
     const mf=document.getElementById('mtxFrom'),mt=document.getElementById('mtxTo');
     if(mf&&!mf.value){const d=new Date();d.setDate(d.getDate()-6);mf.value=toKey(d);}
