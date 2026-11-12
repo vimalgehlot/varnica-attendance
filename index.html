@@ -556,14 +556,14 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   </div>
   <div class="punch-scroll">
     <div class="camera-card">
-      <video id="mainVideo" autoplay muted playsinline webkit-playsinline onclick="toggleCamSize()" title="Tap to enlarge"></video>
+      <video id="mainVideo" autoplay muted playsinline webkit-playsinline></video>
       <div class="cam-corners">
         <div class="corner tl"></div><div class="corner tr"></div>
         <div class="corner bl"></div><div class="corner br"></div>
         <div class="face-guide" id="faceGuide"></div>
         <div class="scan-beam"></div>
       </div>
-      <div class="cam-label" id="camLabel">Position your face in the frame · 🔍 Tap for full size</div>
+      <div class="cam-label" id="camLabel">Position your face in the frame</div>
       <div class="scan-overlay" id="scanOverlay" onclick="startScanFromButton()">
         <div style="font-size:44px">📷</div>
         <div style="font-weight:800;font-size:17px;color:var(--brand-deep)">Face Scan</div>
@@ -811,6 +811,11 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">If two staff have very similar face data, the camera can punch the wrong person. Run this to find such pairs.</div>
       <button class="btn btn-outline" onclick="faceHealthCheck()" style="width:100%">🔍 Check All Staff Faces</button>
       <div id="faceHealthOut" style="margin-top:12px"></div>
+      <div style="border-top:1px solid var(--blush2);margin-top:12px;padding-top:12px">
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px">Auto-learning: har clear punch aur har Manual Review approval se tool us staff ka naya face sample seekhta hai, taaki punch fast aur sure hota jaye.</div>
+        <div id="faceLearnOut"></div>
+        <button class="btn btn-outline" onclick="resetFaceLearning()" style="width:100%;margin-top:8px">♻️ Reset learned samples</button>
+      </div>
     </div>
     <div class="card" id="storageCard">
       <div class="sec-title">💾 Storage</div>
@@ -1532,6 +1537,7 @@ async function init(){
   prunePunchPhotos();
   prunePendingPhotos();
   reviewSync();setInterval(reviewSync,20000);
+  pullFaceLearn().then(pushFaceLearnQ);setInterval(()=>{pullFaceLearn().then(pushFaceLearnQ);},30*60000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)reviewSync();});
   window.addEventListener('online',reviewSync);
   cleanupPunchPhotosOnce();
@@ -1624,7 +1630,7 @@ function matchFaceStrict(desc){
   if(!staff.length)return{ok:false,reason:'no-staff'};
   const scored=staff.map(s=>{
     let best=Infinity;
-    s.descriptors.forEach(d=>{const dist=euclidDist(desc,d);if(dist<best)best=dist;});
+    s.descriptors.concat(learnedFor(s.id)).forEach(d=>{const dist=euclidDist(desc,d);if(dist<best)best=dist;});
     return{id:s.id,name:s.name,dist:best};
   }).sort((a,b)=>a.dist-b.dist);
   const best=scored[0],second=scored[1];
@@ -1635,6 +1641,99 @@ function matchFaceStrict(desc){
     if(gap<MATCH_MARGIN)return{ok:false,reason:'ambiguous',dist:best.dist,gap,a:best.name,b:second.name};
   }
   return{ok:true,id:best.id,name:best.name,dist:best.dist,gap:second?second.dist-best.dist:99};
+}
+// ══ FACE AUTO-LEARNING ══
+// Every CLEAR punch (and every Manual Review approval) stores one extra face sample for that
+// person — new light, glasses, beard, angle — so recognition gets faster and surer week by week.
+// Max 8 extra samples per person (oldest replaced). Shared by all devices through the VPS.
+const LEARN_MAX=8;
+let _faceLearn=null;
+function faceLearnAll(){if(!_faceLearn){const o=DB.get('faceLearn');_faceLearn=(o&&typeof o==='object')?o:{};}return _faceLearn;}
+function learnedFor(id){const l=faceLearnAll()[id];return Array.isArray(l)?l.map(x=>x.d).filter(d=>Array.isArray(d)&&d.length===128):[];}
+function storeFaceLearn(o){_faceLearn=o;try{DB.set('faceLearn',o);}catch(e){}}
+function addLearnedLocal(staffId,item){
+  const o=faceLearnAll();const l=(o[staffId]||[]).filter(x=>x.at!==item.at);l.push(item);
+  l.sort((a,b)=>String(a.at).localeCompare(String(b.at)));o[staffId]=l.slice(-LEARN_MAX);storeFaceLearn(o);
+}
+function queueLearn(staffId,item){
+  addLearnedLocal(staffId,item);
+  const q=DB.get('faceLearnQ')||[];q.push({staffId,d:item.d,at:item.at,src:item.src});DB.set('faceLearnQ',q.slice(-60));
+  pushFaceLearnQ();
+}
+let _learnPushing=false;
+async function pushFaceLearnQ(){
+  if(_learnPushing||!navigator.onLine)return;
+  _learnPushing=true;
+  try{
+    const q=DB.get('faceLearnQ')||[],sent={};
+    for(const it of q){const r=await reviewApi('/learn/add',it);if(r&&r.ok)sent[it.at+'|'+it.staffId]=1;}
+    DB.set('faceLearnQ',(DB.get('faceLearnQ')||[]).filter(it=>!sent[it.at+'|'+it.staffId]));
+  }catch(e){}finally{_learnPushing=false;}
+}
+async function pullFaceLearn(){
+  if(!navigator.onLine)return;
+  try{
+    const r=await fetch('/api/review/learn?bucket='+encodeURIComponent(TOOL_ID),{cache:'no-store'});
+    if(!r.ok)return;
+    const j=await r.json();if(!j||!j.ok||!j.learn||typeof j.learn!=='object')return;
+    const o={};Object.keys(j.learn).forEach(k=>{if(Array.isArray(j.learn[k]))o[k]=j.learn[k];});
+    storeFaceLearn(o);
+    (DB.get('faceLearnQ')||[]).forEach(it=>addLearnedLocal(it.staffId,{d:it.d,at:it.at,src:it.src}));
+  }catch(e){}
+}
+function maybeLearnFace(staffId,descriptor,m){
+  try{
+    if(!(m.dist<=0.42&&m.gap>=0.10))return;             // only clear, safe matches teach the system
+    const today=toKey(new Date());
+    if((faceLearnAll()[staffId]||[]).some(x=>x.src==='auto'&&toKey(new Date(x.at))===today))return; // 1 per person per day
+    const s=getStaff().find(x=>x.id===staffId);if(!s)return;
+    const d=Array.from(descriptor).map(v=>Math.round(v*10000)/10000);
+    let closest=Infinity;(s.descriptors||[]).concat(learnedFor(staffId)).forEach(x=>{const k=euclidDist(d,x);if(k<closest)closest=k;});
+    if(closest<0.12)return;                               // same as a sample we already have — adds nothing
+    queueLearn(staffId,{d,at:new Date().toISOString(),src:'auto'});
+  }catch(e){}
+}
+// Admin approved a Manual Review → that photo is a confirmed face of this person: learn it,
+// but only if it really looks like them (protects against a wrong pick in the dropdown).
+async function learnFromApproval(staffId,photo){
+  try{
+    if(!photo||!faceLoaded)return;
+    const img=new Image();
+    await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=photo;});
+    const det=await faceapi.detectSingleFace(img,new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.4})).withFaceLandmarks().withFaceDescriptor();
+    if(!det)return;
+    const d=Array.from(det.descriptor).map(v=>Math.round(v*10000)/10000);
+    const staff=getStaff().filter(s=>!s.leftDate&&s.descriptors&&s.descriptors.length);
+    const distTo=s=>{let b=Infinity;s.descriptors.concat(learnedFor(s.id)).forEach(x=>{const k=euclidDist(d,x);if(k<b)b=k;});return b;};
+    const me=staff.find(s=>s.id===staffId);if(!me)return;
+    const myDist=distTo(me);
+    if(myDist>0.62)return;
+    const other=Math.min(Infinity,...staff.filter(s=>s.id!==staffId).map(distTo));
+    if(other<myDist+0.05)return;
+    queueLearn(staffId,{d,at:new Date().toISOString(),src:'approved'});
+  }catch(e){}
+}
+// Speed log: how long each scan took (shared with the VPS so it can be checked from anywhere)
+function logScanStat(x){
+  try{const a=DB.get('scanStats')||[];x.at=new Date().toISOString();a.push(x);DB.set('scanStats',a.slice(-100));}catch(e){}
+  try{reviewApi('/stat',{s:x});}catch(e){}
+}
+function renderFaceLearnInfo(){
+  const el=document.getElementById('faceLearnOut');if(!el)return;
+  const o=faceLearnAll(),staff=getStaff().filter(s=>!s.leftDate);
+  const n=staff.reduce((a,s)=>a+((o[s.id]||[]).length),0),who=staff.filter(s=>(o[s.id]||[]).length).length;
+  el.innerHTML='<div style="font-size:12px;color:var(--text2)">🧠 '+n+' learned face samples for '+who+' of '+staff.length+' staff (max '+LEARN_MAX+' each).</div><div id="scanSpeedOut" style="font-size:12px;color:var(--text2);margin-top:6px">⏱ Checking scan speed...</div>';
+  fetch('/api/review/stat?bucket='+encodeURIComponent(TOOL_ID),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{
+    const t=document.getElementById('scanSpeedOut');if(!t)return;
+    if(!j||!j.ok||!j.total){t.textContent='⏱ No scan data yet.';return;}
+    t.textContent='⏱ Last '+j.total+' scans: '+j.punches+' direct punch, '+j.reviews+' Manual Review'+(j.avgPunchMs?' · average '+(j.avgPunchMs/1000).toFixed(1)+' sec':'');
+  }).catch(()=>{});
+}
+async function resetFaceLearning(){
+  if(!confirm('Sab staff ke auto-learned face samples hata dein?\n\nRegistration wali photos safe rahengi.'))return;
+  const r=await reviewApi('/learn/reset',{});
+  if(r&&r.ok){storeFaceLearn({});DB.set('faceLearnQ',[]);showToast('✅ Learned samples cleared');renderFaceLearnInfo();}
+  else showToast('❌ Server se clear nahi hua — internet check karo');
 }
 async function buildMatcher(){
   const staff=getStaff().filter(s=>!s.leftDate&&s.descriptors&&s.descriptors.length);
@@ -1845,7 +1944,7 @@ async function startMainCam(retryCount){
     }
     mainStream=stream;
     const lbl=document.getElementById('camLabel');
-    if(lbl)lbl.textContent='Position your face in the frame · 🔍 Tap for full size';
+    if(lbl)lbl.textContent='Position your face in the frame';
     startScanLoop();
   }catch(e){
     // Cleanup any partial stream to release camera
@@ -1904,9 +2003,12 @@ async function startScanLoop(){
   if(!faceMatcher){await buildMatcher();}
   const myGen=++scanLoopGen; // any older loop will now exit on its next tick
   const video=document.getElementById('mainVideo'),guide=document.getElementById('faceGuide'),label=document.getElementById('camLabel');
-  const FAST_MS=140;         // Stage-1 only (cheap) — feels responsive
-  const HEAVY_MS=300;        // after a Stage-2 run — give the CPU a breather
-  const MIN_FACE_RATIO=0.10; // face must be at least this wide vs frame before heavy recognition
+  const FAST_MS=120;         // nobody in front: cheap presence check only
+  const HEAVY_MS=60;         // after a recognition pass (was 300 ms of idle waiting)
+  const MIN_FACE_RATIO=0.10; // face must be at least this wide vs frame before recognition
+  const FAIL_FRAMES=4;       // this many recognition passes must ALL fail before Manual Review (was 1)
+  let facePresent=false,failFrames=0,t0=0,frames=0;
+  const resetTry=()=>{facePresent=false;failFrames=0;t0=0;frames=0;resetMatchConfirm();};
   const loop=async()=>{
     if(myGen!==scanLoopGen)return;              // a newer loop took over — this one dies
     if(!mainStream){return;}                     // camera stopped — stop looping entirely
@@ -1914,34 +2016,44 @@ async function startScanLoop(){
     let nextDelay=FAST_MS;
     if(video.readyState>=2&&video.videoWidth>0&&!cooldown){
       try{
-        // ── STAGE 1: cheap presence check (detector only — no landmarks, no descriptor) ──
-        const box=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4}));
-        if(myGen!==scanLoopGen)return;
-        if(!box){
-          guide.className='face-guide';label.textContent='Position your face in the frame';
-        }else{
-          const relW=box.box.width/(video.videoWidth||1);
-          if(relW<MIN_FACE_RATIO){
-            guide.className='face-guide detected';label.textContent='Please move closer...';
+        if(!facePresent){
+          // ── cheap presence check (detector only) ──
+          const box=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4}));
+          if(myGen!==scanLoopGen)return;
+          if(!box){guide.className='face-guide';label.textContent='Position your face in the frame';resetTry();}
+          else if(box.box.width/(video.videoWidth||1)<MIN_FACE_RATIO){guide.className='face-guide detected';label.textContent='Please move closer...';}
+          else facePresent=true;
+        }
+        if(facePresent){
+          // ── full recognition — runs straight away on every frame while a face is there ──
+          nextDelay=HEAVY_MS;
+          if(!t0)t0=performance.now();
+          guide.className='face-guide detected';
+          if(!failFrames)label.textContent='Face detected — matching...';
+          const det=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4})).withFaceLandmarks().withFaceDescriptor();
+          if(myGen!==scanLoopGen)return;
+          frames++;
+          if(!det||det.detection.box.width/(video.videoWidth||1)<MIN_FACE_RATIO){
+            facePresent=false;resetMatchConfirm(); // face moved away — back to the cheap check
+          }else if(!faceMatcher){
+            label.textContent='No staff registered yet';
           }else{
-            // ── STAGE 2: full recognition (unchanged) — only when someone is really there ──
-            nextDelay=HEAVY_MS;
-            guide.className='face-guide detected';label.textContent='Face detected — matching...';
-            const det=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.5})).withFaceLandmarks().withFaceDescriptor();
-            if(myGen!==scanLoopGen)return;
-            if(det){
-              if(faceMatcher){
-                const m=matchFaceStrict(det.descriptor);
-                if(m.ok){
-                  // Same person must be confirmed twice in a row — one bad frame can't punch
-                  if(_confirmId===m.id){_confirmCount++;}else{_confirmId=m.id;_confirmCount=1;}
-                  if(_confirmCount<MATCH_CONFIRMS){
-                    guide.className='face-guide detected';
-                    label.textContent='Verifying... hold still';
-                  }else{
-                  resetMatchConfirm();
-                  const staff=getStaff().find(s=>s.id===m.id);
-                  if(staff){guide.className='face-guide matched';cooldown=true;const punchPhoto=capturePunchThumbnail();await handlePunch(staff,punchPhoto);
+            const m=matchFaceStrict(det.descriptor);
+            if(m.ok){
+              failFrames=0;
+              if(_confirmId===m.id){_confirmCount++;}else{_confirmId=m.id;_confirmCount=1;}
+              const sure=m.dist<=0.35&&m.gap>=0.15; // very clear match: one frame is enough
+              if(_confirmCount<MATCH_CONFIRMS&&!sure){
+                label.textContent='Verifying... hold still';
+              }else{
+                const staff=getStaff().find(s=>s.id===m.id);
+                if(staff){
+                  logScanStat({ms:Math.round(performance.now()-t0),frames,result:'punch',dist:m.dist,gap:m.gap});
+                  maybeLearnFace(staff.id,det.descriptor,m);
+                  resetTry();
+                  guide.className='face-guide matched';cooldown=true;
+                  label.textContent='✅ '+staff.name+' — saving punch...';
+                  const punchPhoto=capturePunchThumbnail();await handlePunch(staff,punchPhoto);
                   if(getSettings().singlePunchMode!==false){
                     // One punch = one tap. Camera stops; next staff must tap to start.
                     stopMainCam();
@@ -1953,19 +2065,20 @@ async function startScanLoop(){
                   scheduleCamIdleStop();
                   setTimeout(()=>{cooldown=false;guide.className='face-guide';
                   label.textContent='Next staff can scan now...';resetStatusCard();
-                  },2500);}
-                  }
-                }else if(m.reason==='ambiguous'){
-                  // Two staff look almost equally close — never guess, ask for a better look
-                  resetMatchConfirm();
-                  guide.className='face-guide detected';
-                  label.textContent='Not clear — please come closer and look straight at the camera';
-                }else{
-                  resetMatchConfirm();
-                  guide.className='face-guide failed';label.textContent='Not recognized — capturing...';
-                  await captureFail();cooldown=true;setTimeout(()=>{cooldown=false;guide.className='face-guide';label.textContent='Position your face in the frame';resetStatusCard();},4000);
-                }
-              }else{label.textContent='No staff registered yet';}
+                  },2500);
+                }else resetTry();
+              }
+            }else{
+              // One blurry / turned frame is normal — try again before sending to Manual Review.
+              resetMatchConfirm();failFrames++;
+              if(failFrames<FAIL_FRAMES){
+                label.textContent=m.reason==='ambiguous'?'Not clear — please look straight at the camera':'Hold still — checking again...';
+              }else{
+                logScanStat({ms:Math.round(performance.now()-t0),frames,result:'review',dist:m.dist,gap:m.gap});
+                resetTry();
+                guide.className='face-guide failed';label.textContent='Not recognized — capturing...';
+                await captureFail();cooldown=true;setTimeout(()=>{cooldown=false;guide.className='face-guide';label.textContent='Position your face in the frame';resetStatusCard();},4000);
+              }
             }
           }
         }
@@ -2147,11 +2260,11 @@ async function syncRecentReasonsFromServer(staffId){
 async function handlePunch(staff,photo){
   // Another device may already hold today's punch for this person. Pull it in
   // first, otherwise this device would create a duplicate (Late) IN.
-  if(navigator.onLine)await syncTodayFromServer(staff.id);
+  // Both checks run at the same time (they used to run one after the other = double wait).
+  if(navigator.onLine)await Promise.all([syncTodayFromServer(staff.id).catch(()=>false),syncRecentReasonsFromServer(staff.id).catch(()=>false)]);
   // Also pull the last 7 days before checking for a pending reason — otherwise a
   // reason answered on another device (or just before a PWA reload on this one)
   // can look "unanswered" here and get asked again for the same day.
-  if(navigator.onLine)await syncRecentReasonsFromServer(staff.id);
   // Look back over the last 7 days for a day where a reason is still missing.
   const pending=findPendingReasonDay(staff);
   // ── Record the punch FIRST, always. ──
@@ -2765,6 +2878,7 @@ async function approveEntry(id){
     if(r==='in'||r==='out'){
       const p=getPending(),e=p.find(x=>x.id===id);if(e){e.status='approved';e.staffId=sid;delete e.photo;delete e.rs;}setPending(p);
       renderApprovals();updateApprBadge();
+      learnFromApproval(s.id,photo);
       reviewApi('/resolve',{id,status:'approved',staffId:sid}).then(rv=>{if(rv&&rv.ok){const q=getPending(),x=q.find(z=>z.id===id);if(x){x.rs=1;setPending(q);}}});
       const hhmm=at.toLocaleTimeString('en-IN',{hour12:false}).slice(0,5);
       showToast('✅ '+s.name+' — '+(r==='in'?'IN':'OUT')+' recorded at '+hhmm+(toKey(at)!==toKey(new Date())?' on '+toKey(at):''));
@@ -4577,7 +4691,7 @@ function dashListGo(i){
 function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(id==='punchPage'){document.querySelector('.nav-btn').classList.add('active');const ov=document.getElementById('scanOverlay');if(ov&&!mainStream)ov.classList.remove('hidden');}}
 function goAdmin(){curPin='';document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));document.getElementById('pinError').textContent='';document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('adminLoginPage').classList.add('active');}
 function adminLogout(){showPage('punchPage');}
-function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();reviewSync();}if(tab==='settings')loadSettingsUI();if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){
+function aTab(tab){['dash','staff','report','appr','sync','settings','manual'].forEach(t=>{const el=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));if(el)el.classList.add('hidden');});const el=document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1));if(el)el.classList.remove('hidden');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));const idx=['dash','staff','report','appr','sync','settings','manual'].indexOf(tab);if(idx>=0){const tabBtns=document.querySelectorAll('.tab-btn');if(tabBtns[idx])tabBtns[idx].classList.add('active');}if(tab==='staff')renderStaffList();if(tab==='appr'){renderApprovals();updateApprBadge();reviewSync();}if(tab==='settings'){loadSettingsUI();renderFaceLearnInfo();}if(tab==='report')setDefaultDates();if(tab==='sync'){updateSyncUI();loadSheetUrl();}if(tab==='manual'){
     // Editable matrix is the only place attendance is changed by hand.
     const mf=document.getElementById('mtxFrom'),mt=document.getElementById('mtxTo');
     if(mf&&!mf.value){const d=new Date();d.setDate(d.getDate()-6);mf.value=toKey(d);}
