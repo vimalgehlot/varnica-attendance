@@ -123,7 +123,7 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 /* PUNCH PAGE */
 .punch-scroll{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;align-items:center;}
 .camera-card{width:100%;max-width:480px;min-height:400px;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;transition:max-width 0.3s ease;}
-.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:60vh;min-height:400px;object-fit:cover;cursor:pointer;transition:max-height 0.3s ease;}
+.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:60vh;min-height:400px;object-fit:contain;background:#1a1008;cursor:pointer;transition:max-height 0.3s ease;}
 .camera-card.cam-big{max-width:720px;}
 .camera-card.cam-big video{max-height:80vh;}
 .camera-card.cam-big .face-guide{width:270px;height:320px;}
@@ -564,6 +564,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div class="scan-beam"></div>
       </div>
       <div class="cam-label" id="camLabel">Position your face in the frame</div>
+      <div id="scanDiag" style="position:absolute;top:6px;left:0;right:0;text-align:center;font-size:10px;color:rgba(255,255,255,0.75);text-shadow:0 1px 2px #000;pointer-events:none;font-family:monospace"></div>
       <div class="scan-overlay" id="scanOverlay" onclick="startScanFromButton()">
         <div style="font-size:44px">📷</div>
         <div style="font-weight:800;font-size:17px;color:var(--brand-deep)">Face Scan</div>
@@ -1993,6 +1994,14 @@ function stopRegCam(){if(regStream){regStream.getTracks().forEach(t=>t.stop());r
 // ══════════════════════════════════════════════
 let scanLoopGen=0; // only the newest loop stays alive
 function stopScanLoop(){scanLoopGen++;}
+// Small grey line on the camera: camera size, face size, match score — so a screenshot shows
+// exactly why a punch is slow (too far, too close, low light, look-alike).
+function scanDiag(video,rw,m){
+  const el=document.getElementById('scanDiag');if(!el)return;
+  let t='cam '+video.videoWidth+'x'+video.videoHeight+' · face '+Math.round(rw*100)+'%';
+  if(m&&m.dist!==undefined)t+=' · '+(m.name||m.a||'?')+' '+m.dist.toFixed(2)+(m.gap!==undefined&&m.gap<99?' gap '+m.gap.toFixed(2):'')+(m.ok?' ✓':' ✗ '+m.reason);
+  el.textContent=t;
+}
 async function startScanLoop(){
   if(!faceLoaded){
     const lbl=document.getElementById('camLabel');
@@ -2006,6 +2015,7 @@ async function startScanLoop(){
   const FAST_MS=120;         // nobody in front: cheap presence check only
   const HEAVY_MS=60;         // after a recognition pass (was 300 ms of idle waiting)
   const MIN_FACE_RATIO=0.10; // face must be at least this wide vs frame before recognition
+  const MAX_FACE_RATIO=0.62; // face fills the screen (too close) — recognition is unreliable
   const FAIL_FRAMES=4;       // this many recognition passes must ALL fail before Manual Review (was 1)
   let facePresent=false,failFrames=0,t0=0,frames=0;
   const resetTry=()=>{facePresent=false;failFrames=0;t0=0;frames=0;resetMatchConfirm();};
@@ -2018,10 +2028,15 @@ async function startScanLoop(){
       try{
         if(!facePresent){
           // ── cheap presence check (detector only) ──
-          const box=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4}));
+          let box=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4}));
+          // a face that fills the screen is often missed at 224 — try the "big face" size too
+          if(!box&&myGen===scanLoopGen)box=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:128,scoreThreshold:0.4}));
           if(myGen!==scanLoopGen)return;
+          const rw=box?box.box.width/(video.videoWidth||1):0;
+          scanDiag(video,rw,null);
           if(!box){guide.className='face-guide';label.textContent='Position your face in the frame';resetTry();}
-          else if(box.box.width/(video.videoWidth||1)<MIN_FACE_RATIO){guide.className='face-guide detected';label.textContent='Please move closer...';}
+          else if(rw<MIN_FACE_RATIO){guide.className='face-guide detected';label.textContent='Please move closer...';}
+          else if(rw>MAX_FACE_RATIO){guide.className='face-guide detected';label.textContent='⬅ Thoda peeche ho jao — poora chehra frame mein aaye';}
           else facePresent=true;
         }
         if(facePresent){
@@ -2033,12 +2048,14 @@ async function startScanLoop(){
           const det=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4})).withFaceLandmarks().withFaceDescriptor();
           if(myGen!==scanLoopGen)return;
           frames++;
+          if(det&&det.detection.box.width/(video.videoWidth||1)>MAX_FACE_RATIO){facePresent=false;resetMatchConfirm();if(myGen===scanLoopGen)setTimeout(loop,FAST_MS);return;}
           if(!det||det.detection.box.width/(video.videoWidth||1)<MIN_FACE_RATIO){
             facePresent=false;resetMatchConfirm(); // face moved away — back to the cheap check
           }else if(!faceMatcher){
             label.textContent='No staff registered yet';
           }else{
             const m=matchFaceStrict(det.descriptor);
+            scanDiag(video,det.detection.box.width/(video.videoWidth||1),m);
             if(m.ok){
               failFrames=0;
               if(_confirmId===m.id){_confirmCount++;}else{_confirmId=m.id;_confirmCount=1;}
@@ -2072,7 +2089,7 @@ async function startScanLoop(){
               // One blurry / turned frame is normal — try again before sending to Manual Review.
               resetMatchConfirm();failFrames++;
               if(failFrames<FAIL_FRAMES){
-                label.textContent=m.reason==='ambiguous'?'Not clear — please look straight at the camera':'Hold still — checking again...';
+                label.textContent=m.reason==='ambiguous'?'Not clear — please look straight at the camera':'Seedha camera mein dekho — checking again...';
               }else{
                 logScanStat({ms:Math.round(performance.now()-t0),frames,result:'review',dist:m.dist,gap:m.gap});
                 resetTry();
