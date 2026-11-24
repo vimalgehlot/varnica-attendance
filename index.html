@@ -11,6 +11,38 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="att_icon_192.png">
 <script>
+// ══ DEVICE KEY (API security) ══
+// A device becomes "registered" by opening its private link once:  https://…/#key=XXXX
+// The key is kept on this device only; every call to this site's /api then carries it, and photo
+// links carry it as ?k=. A device WITHOUT a key behaves exactly as before.
+(function(){
+  var LS='vj_devkey';
+  function getKey(){try{return localStorage.getItem(LS)||'';}catch(e){return '';}}
+  try{
+    var m=/[#&]key=([A-Za-z0-9_-]{16,128})/.exec(location.hash||'');
+    if(m){localStorage.setItem(LS,m[1]);history.replaceState(null,'',location.pathname+location.search);}
+  }catch(e){}
+  var _f=window.fetch;
+  if(typeof _f==='function'){
+    window.fetch=function(input,init){
+      try{
+        var k=getKey();
+        if(k&&typeof input==='string'&&input.indexOf('/api/')===0){
+          init=Object.assign({},init||{});
+          var h=new Headers(init.headers||{});h.set('X-Device-Key',k);init.headers=h;
+        }
+      }catch(e){}
+      return _f.call(window,input,init);
+    };
+  }
+  window.apiImg=function(u){
+    var k=getKey();
+    return(k&&typeof u==='string'&&u.indexOf('/api/')===0)?u+(u.indexOf('?')<0?'?':'&')+'k='+encodeURIComponent(k):u;
+  };
+  window.hasDeviceKey=function(){return !!getKey();};
+})();
+</script>
+<script>
 // Reliable mobile viewport-height fix (works even without 100dvh support)
 (function(){
   function setVH(){document.documentElement.style.setProperty('--vh',(window.innerHeight*0.01)+'px');}
@@ -122,8 +154,8 @@ body{font-family:"DM Sans",sans-serif;background:var(--blush);color:var(--text);
 
 /* PUNCH PAGE */
 .punch-scroll{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;align-items:center;}
-.camera-card{width:100%;max-width:480px;min-height:400px;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;transition:max-width 0.3s ease;}
-.camera-card video{width:100%;display:block;transform:scaleX(-1);max-height:60vh;min-height:400px;object-fit:contain;background:#1a1008;cursor:pointer;transition:max-height 0.3s ease;}
+.camera-card{width:100%;max-width:480px;min-height:400px;aspect-ratio:3/4;max-height:72vh;flex-shrink:0;background:var(--surface);border:1px solid var(--blush3);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-lg);position:relative;transition:max-width 0.3s ease;}
+.camera-card video{position:absolute;top:0;left:0;width:100%;height:100%;display:block;transform:scaleX(-1);object-fit:contain;background:#1a1008;}
 .camera-card.cam-big{max-width:720px;}
 .camera-card.cam-big video{max-height:80vh;}
 .camera-card.cam-big .face-guide{width:270px;height:320px;}
@@ -557,6 +589,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   <div class="punch-scroll">
     <div class="camera-card">
       <video id="mainVideo" autoplay muted playsinline webkit-playsinline></video>
+      <button id="camResetBtn" onclick="resetCameraNow()" title="Camera reset" style="position:absolute;top:10px;left:10px;z-index:5;width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,0.35);background:rgba(26,16,8,0.45);color:#fff;font-size:16px;line-height:1;cursor:pointer">🔄</button>
       <div class="cam-corners">
         <div class="corner tl"></div><div class="corner tr"></div>
         <div class="corner bl"></div><div class="corner br"></div>
@@ -1141,7 +1174,7 @@ function getPunchPhotoUrl(staffId,dateKey,inout,stamp){
   // delete + re-punch the browser would happily serve the OLD cached image.
   // Appending the punch time makes the URL change whenever the punch changes.
   const base='/api/punch-photo/'+TOOL_ID+'/'+dateKey+'_'+staffId+'_'+inout+'.jpg';
-  return stamp?base+'?v='+encodeURIComponent(stamp):base;
+  return apiImg(stamp?base+'?v='+encodeURIComponent(stamp):base);
 }
 async function uploadPunchPhoto(staffId,dateKey,inout,photoData){
   if(!photoData)return false;
@@ -1723,7 +1756,7 @@ function renderFaceLearnInfo(){
   const el=document.getElementById('faceLearnOut');if(!el)return;
   const o=faceLearnAll(),staff=getStaff().filter(s=>!s.leftDate);
   const n=staff.reduce((a,s)=>a+((o[s.id]||[]).length),0),who=staff.filter(s=>(o[s.id]||[]).length).length;
-  el.innerHTML='<div style="font-size:12px;color:var(--text2)">🧠 '+n+' learned face samples for '+who+' of '+staff.length+' staff (max '+LEARN_MAX+' each).</div><div id="scanSpeedOut" style="font-size:12px;color:var(--text2);margin-top:6px">⏱ Checking scan speed...</div>';
+  el.innerHTML='<div style="font-size:12px;color:var(--text2)">🧠 '+n+' learned face samples for '+who+' of '+staff.length+' staff (max '+LEARN_MAX+' each).</div><div id="scanSpeedOut" style="font-size:12px;color:var(--text2);margin-top:6px">⏱ Checking scan speed...</div><div style="font-size:12px;color:var(--text2);margin-top:6px">🔐 Device key: '+(hasDeviceKey()?'✅ registered':'⚪ not set (abhi zaroori nahi)')+'</div>';
   fetch('/api/review/stat?bucket='+encodeURIComponent(TOOL_ID),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{
     const t=document.getElementById('scanSpeedOut');if(!t)return;
     if(!j||!j.ok||!j.total){t.textContent='⏱ No scan data yet.';return;}
@@ -1895,7 +1928,7 @@ function isStreamHealthy(){
 }
 function handleStreamDeath(){
   // iOS killed our stream (sleep/background/interruption) — full cleanup + fresh Start button
-  stopScanLoop();
+  stopCamWatchdog();stopScanLoop();
   try{if(mainStream){mainStream.getTracks().forEach(t=>t.stop());}}catch(_){}
   mainStream=null;camStarting=false;
   const v=document.getElementById('mainVideo');
@@ -1938,12 +1971,18 @@ async function startMainCam(retryCount){
         setTimeout(ok,2000); // fallback in case metadata never fires
         v.addEventListener('error',fail,{once:true});
       });
-      try{await v.play();}catch(playErr){
+      try{await Promise.race([v.play(),new Promise(r=>setTimeout(r,4000))]);}catch(playErr){
         // play() rejection is often benign on iOS if video is already playing
         if(playErr&&playErr.name!=='AbortError')throw playErr;
       }
     }
     mainStream=stream;
+    try{ // some phones zoom the front camera by themselves — ask for the widest view
+      const tr=stream.getVideoTracks()[0],caps=tr&&tr.getCapabilities?tr.getCapabilities():{};
+      if(caps.zoom&&typeof caps.zoom.min==='number')tr.applyConstraints({advanced:[{zoom:caps.zoom.min}]}).catch(()=>{});
+    }catch(e){}
+    if(v)v.onresize=()=>repaintVideo(v);
+    startCamWatchdog();
     const lbl=document.getElementById('camLabel');
     if(lbl)lbl.textContent='Position your face in the frame';
     startScanLoop();
@@ -1970,7 +2009,45 @@ async function startMainCam(retryCount){
     if(ov)ov.classList.remove('hidden');
   }finally{camStarting=false;}
 }
-function stopMainCam(){camStarting=false;stopScanLoop();if(mainStream){mainStream.getTracks().forEach(t=>t.stop());mainStream=null;}}
+// ══ CAMERA SELF-HEALING ══
+// iPhone Safari sometimes freezes the picture, shows it in a small corner box, or zooms in.
+// The watchdog notices a frozen/blank picture and restarts the camera by itself (max 3x/2 min),
+// and a layout change forces the video to repaint.
+let _camWD=null,_wdLastT=-1,_wdStale=0,_wdRestarts=[],CAM_WATCH_MS=2000,CAM_STALL_TICKS=2,camAutoRestarts=0;
+function repaintVideo(v){try{v.style.display='none';void v.offsetHeight;v.style.display='';}catch(e){}}
+function startCamWatchdog(){stopCamWatchdog();_wdLastT=-1;_wdStale=0;_camWD=setInterval(camWatchTick,CAM_WATCH_MS);}
+function stopCamWatchdog(){if(_camWD){clearInterval(_camWD);_camWD=null;}}
+function camWatchTick(){
+  const v=document.getElementById('mainVideo');
+  if(!v||!mainStream||document.hidden||camStarting)return;
+  const t=v.currentTime,stuck=(v.videoWidth===0)||(t===_wdLastT);
+  _wdLastT=t;
+  if(stuck&&!cooldown)_wdStale++;else _wdStale=0;
+  const d=document.getElementById('scanDiag');
+  if(d&&!d.textContent)scanDiag(v,0,null);
+  if(_wdStale===1){try{v.play();}catch(e){}}
+  if(_wdStale>=CAM_STALL_TICKS){
+    const now=Date.now();_wdRestarts=_wdRestarts.filter(x=>now-x<120000);
+    if(_wdRestarts.length>=3){handleStreamDeath();return;} // keeps failing — show the Start button
+    _wdRestarts.push(now);camAutoRestarts++;
+    restartCamSilently();
+  }
+}
+function restartCamSilently(){
+  stopCamWatchdog();stopScanLoop();
+  try{if(mainStream)mainStream.getTracks().forEach(t=>t.stop());}catch(e){}
+  mainStream=null;camStarting=false;
+  const v=document.getElementById('mainVideo');if(v){try{v.pause();v.srcObject=null;}catch(e){}}
+  startMainCam(1);
+}
+function resetCameraNow(){
+  const ov=document.getElementById('scanOverlay');
+  if(ov&&!ov.classList.contains('hidden')){startScanFromButton();return;}
+  cooldown=false;_wdRestarts=[];
+  showToast('🔄 Camera reset...',1500);
+  restartCamSilently();
+}
+function stopMainCam(){stopCamWatchdog();camStarting=false;stopScanLoop();if(mainStream){mainStream.getTracks().forEach(t=>t.stop());mainStream=null;}}
 // ── iOS kiosk recovery: app wake/foreground → verify camera ONLY (never touches attendance data) ──
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){
@@ -1998,7 +2075,8 @@ function stopScanLoop(){scanLoopGen++;}
 // exactly why a punch is slow (too far, too close, low light, look-alike).
 function scanDiag(video,rw,m){
   const el=document.getElementById('scanDiag');if(!el)return;
-  let t='cam '+video.videoWidth+'x'+video.videoHeight+' · face '+Math.round(rw*100)+'%';
+  let st={};try{const tr=mainStream&&mainStream.getVideoTracks()[0];if(tr&&tr.getSettings)st=tr.getSettings();}catch(e){}
+  let t='cam '+video.videoWidth+'x'+video.videoHeight+(st.zoom?' z'+Number(st.zoom).toFixed(1):'')+(st.frameRate?' '+Math.round(st.frameRate)+'fps':'')+(camAutoRestarts?' ↻'+camAutoRestarts:'')+' · face '+Math.round(rw*100)+'%';
   if(m&&m.dist!==undefined)t+=' · '+(m.name||m.a||'?')+' '+m.dist.toFixed(2)+(m.gap!==undefined&&m.gap<99?' gap '+m.gap.toFixed(2):'')+(m.ok?' ✓':' ✗ '+m.reason);
   el.textContent=t;
 }
@@ -2829,7 +2907,7 @@ function renderApprovals(){
   const pending=getPending().filter(p=>p.status==='pending'),el=document.getElementById('apprList'),staff=getStaff();
   if(!pending.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">✅</div><p>No pending approvals</p></div>';return;}
   el.innerHTML=pending.map(p=>{
-    const vpsUrl='/api/punch-photo/'+TOOL_ID+'/unknown_'+p.id+'.jpg';
+    const vpsUrl=apiImg('/api/punch-photo/'+TOOL_ID+'/unknown_'+p.id+'.jpg');
     const photoSrc=p.photo?p.photo:(_reviewPhotos[p.id]||vpsUrl);
     const photoHtml=photoSrc
       ? `<img class="appr-photo" src="${photoSrc}" alt="Unknown face" onerror="this.onerror=null;this.src='${vpsUrl}';setTimeout(()=>{if(!this.complete||this.naturalWidth===0)this.style.display='none';},1500)">`
