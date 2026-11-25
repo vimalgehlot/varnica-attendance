@@ -447,6 +447,10 @@ select.if{appearance:none;}
 .reg-guide{width:130px;height:165px;border:2px dashed rgba(184,149,90,0.5);border-radius:50% 50% 45% 45%;}
 .photo-thumbs{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;}
 .photo-thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:2px solid var(--brand-light);}
+.face-gal{margin:6px 0 12px;}.face-gal-t{font-size:11.5px;font-weight:600;color:var(--text2);margin:8px 0 5px;}
+.fg-row{display:flex;gap:7px;flex-wrap:wrap;}.fg-it{text-align:center;font-size:10px;color:var(--text3);}
+.fg-it img{width:64px;height:64px;border-radius:8px;object-fit:cover;border:2px solid var(--brand-light);display:block;margin-bottom:2px;}
+.fg-note{font-size:11px;color:var(--text3);line-height:1.4;margin-top:4px;}
 .set-row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--blush2);}
 .set-row:last-child{border-bottom:none;}
 .set-lbl{font-size:13px;color:var(--text);}
@@ -957,11 +961,15 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="ig"><label class="il">ESI Applicable?</label><select class="if" id="sESI"><option value="1">Yes</option><option value="0">No</option></select></div>
     <div class="ig"><label class="il">Date of Birth 🎂 (optional)</label><input type="date" class="if" id="sDob"></div>
     <div class="ig"><label class="il">Joining Date 📅 (blank = from first punch)</label><input type="date" class="if" id="sJoin"></div>
+    <div id="faceGallery" class="face-gal" style="display:none"></div>
+    <button class="btn btn-outline" id="unlockCamBtn" style="display:none;margin-bottom:10px" onclick="unlockRegCam()">🔓 Face photos badlo (camera chalu karo)</button>
+    <div id="regCamBlock">
     <label class="il">Face Registration (3-5 photos)</label>
     <div class="reg-cam-wrap"><video id="regVideo" autoplay muted playsinline></video><div class="reg-guide-ov"><div class="reg-guide"></div></div></div>
     <div class="photo-thumbs" id="photoThumbs"></div>
     <div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px" id="capInfo"></div>
-    <button class="btn btn-outline" onclick="capturePhoto()">📸 Capture (<span id="capNum">0</span>/5)</button>
+    <button class="btn btn-outline" id="capBtn" onclick="capturePhoto()">📸 Capture (<span id="capNum">0</span>/5)</button>
+    </div>
     <button class="btn btn-primary" id="saveStaffBtn" onclick="saveStaff()">💾 Save Staff</button>
     <button class="btn btn-secondary" onclick="closeModal('staffModal')">Cancel</button>
   </div>
@@ -1691,7 +1699,7 @@ function addLearnedLocal(staffId,item){
 }
 function queueLearn(staffId,item){
   addLearnedLocal(staffId,item);
-  const q=DB.get('faceLearnQ')||[];q.push({staffId,d:item.d,at:item.at,src:item.src});DB.set('faceLearnQ',q.slice(-60));
+  const q=DB.get('faceLearnQ')||[];q.push({staffId,d:item.d,at:item.at,src:item.src,p:item.p});DB.set('faceLearnQ',q.slice(-60));
   pushFaceLearnQ();
 }
 let _learnPushing=false;
@@ -1712,7 +1720,7 @@ async function pullFaceLearn(){
     const j=await r.json();if(!j||!j.ok||!j.learn||typeof j.learn!=='object')return;
     const o={};Object.keys(j.learn).forEach(k=>{if(Array.isArray(j.learn[k]))o[k]=j.learn[k];});
     storeFaceLearn(o);
-    (DB.get('faceLearnQ')||[]).forEach(it=>addLearnedLocal(it.staffId,{d:it.d,at:it.at,src:it.src}));
+    (DB.get('faceLearnQ')||[]).forEach(it=>addLearnedLocal(it.staffId,{d:it.d,at:it.at,src:it.src,p:it.p}));
   }catch(e){}
 }
 function maybeLearnFace(staffId,descriptor,m){
@@ -1724,7 +1732,9 @@ function maybeLearnFace(staffId,descriptor,m){
     const d=Array.from(descriptor).map(v=>Math.round(v*10000)/10000);
     let closest=Infinity;(s.descriptors||[]).concat(learnedFor(staffId)).forEach(x=>{const k=euclidDist(d,x);if(k<closest)closest=k;});
     if(closest<0.12)return;                               // same as a sample we already have — adds nothing
-    queueLearn(staffId,{d,at:new Date().toISOString(),src:'auto'});
+    const at=new Date().toISOString(),tn=capturePunchThumbnail();let pn;
+    if(tn){pn='learn_'+staffId+'_'+Date.parse(at)+'.jpg';compressPhoto(tn,200,0.72).then(sm=>{if(sm)uploadFacePic(pn,sm);});}
+    queueLearn(staffId,{d,at,src:'auto',p:pn});
   }catch(e){}
 }
 // Admin approved a Manual Review → that photo is a confirmed face of this person: learn it,
@@ -1744,7 +1754,9 @@ async function learnFromApproval(staffId,photo){
     if(myDist>0.62)return;
     const other=Math.min(Infinity,...staff.filter(s=>s.id!==staffId).map(distTo));
     if(other<myDist+0.05)return;
-    queueLearn(staffId,{d,at:new Date().toISOString(),src:'approved'});
+    const at=new Date().toISOString(),pn='learn_'+staffId+'_'+Date.parse(at)+'.jpg';
+    compressPhoto(photo,200,0.72).then(sm=>{if(sm)uploadFacePic(pn,sm);});
+    queueLearn(staffId,{d,at,src:'approved',p:pn});
   }catch(e){}
 }
 // Speed log: how long each scan took (shared with the VPS so it can be checked from anywhere)
@@ -2817,7 +2829,7 @@ function openAddStaff(){
   document.getElementById('sJoin').value=toKey(new Date());
   document.getElementById('staffModalTitle').textContent='➕ Add Staff';
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
-  openModal('staffModal');startRegCam();
+  setRegLock(false,null,false);openModal('staffModal');startRegCam();
 }
 function reRegFace(id){
   const s=getStaff().find(x=>x.id===id);if(!s)return;
@@ -2825,11 +2837,64 @@ function reRegFace(id){
   document.getElementById('sIn').value=s.shiftIn;document.getElementById('sOut').value=s.shiftOut;
   document.getElementById('sSalary').value=s.salary||'';document.getElementById('sSalaryBasis').value=s.salaryBasis||'monthly';document.getElementById('sPortalPin').value=s.portalPin||'';document.getElementById('sPF').value=s.pf===0?'0':'1';document.getElementById('sESI').value=s.esi===0?'0':'1';document.getElementById('sDob').value=s.dob||'';
   document.getElementById('sJoin').value=s.joinDate||'';
-  document.getElementById('staffModalTitle').textContent='📷 Re-register — '+s.name;
+  document.getElementById('staffModalTitle').textContent='✏️ Edit Staff — '+s.name;
   regPhotos=[];document.getElementById('photoThumbs').innerHTML='';document.getElementById('capNum').textContent='0';document.getElementById('capInfo').textContent='';
-  openModal('staffModal');startRegCam();
+  setRegLock(true,s,true);openModal('staffModal');
+}
+// ── Camera lock + face photo gallery (Edit Staff) ──
+// Editing salary/shift etc. must never take a photo by accident: the camera stays OFF until the
+// admin taps "Face photos badlo" and confirms, and saving new photos asks once more.
+let _regUnlocked=true;
+function setRegLock(locked,s,isEdit){
+  _regUnlocked=!locked;
+  const cb=document.getElementById('regCamBlock'),ub=document.getElementById('unlockCamBtn'),g=document.getElementById('faceGallery');
+  if(cb)cb.style.display=locked?'none':'';
+  if(ub)ub.style.display=locked?'':'none';
+  if(g){g.style.display=isEdit?'':'none';if(isEdit&&s)renderFaceGallery(s);}
+}
+function unlockRegCam(){
+  const id=document.getElementById('editStaffId').value,s=getStaff().find(x=>x.id===id);
+  if(!confirm('Camera chalu karke "'+(s?s.name:'staff')+'" ki nayi face photos leni hain?\n\nCamera ke saamne sirf wahi staff hona chahiye (aap nahi).'))return;
+  setRegLock(false,s,true);startRegCam();
+}
+function faceUrl(name,v){return apiImg('/api/punch-photo/'+TOOL_ID+'/'+name+(v?'?v='+v:''));}
+function uploadFacePic(name,dataUrl,attempt){
+  attempt=attempt||1;
+  fetch('/api/punch-photo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bucket:TOOL_ID,id:name,photo:dataUrl})})
+    .then(r=>{if(!r.ok)throw new Error('upload '+r.status);})
+    .catch(()=>{if(attempt<3)setTimeout(()=>uploadFacePic(name,dataUrl,attempt+1),attempt===1?2000:8000);});
+}
+async function saveRegPics(staffId,pics){
+  for(let i=0;i<Math.min(5,pics.length);i++){
+    try{const small=await compressPhoto(pics[i],200,0.72);if(small)uploadFacePic('reg_'+staffId+'_'+(i+1)+'.jpg',small);}catch(e){}
+  }
+}
+function renderFaceGallery(s){
+  const el=document.getElementById('faceGallery');if(!el||!s)return;
+  const hide='onerror="this.parentNode.style.display=\'none\'"';
+  let h='<div class="face-gal-t">📸 Registered photos</div>';
+  const n=Math.min(5,s.regCount||0);
+  if(n){
+    h+='<div class="fg-row">';
+    for(let i=1;i<=n;i++)h+='<div class="fg-it"><img src="'+faceUrl('reg_'+s.id+'_'+i+'.jpg',s.regAt)+'" '+hide+'>#'+i+'</div>';
+    h+='</div>';
+  }else{
+    h+='<div class="fg-row">'+(s.photo?'<div class="fg-it"><img src="'+s.photo+'">1 photo</div>':'')+'</div>'
+      +'<div class="fg-note">Is staff ki baaki registration photos pehle save nahi hoti thi (sirf face ka code bana tha). "Face photos badlo" se 3-5 photos dobara lo, tab ye yahan dikhengi.</div>';
+  }
+  const L=(faceLearnAll()[s.id]||[]).slice().reverse(),withP=L.filter(x=>x.p);
+  h+='<div class="face-gal-t">🧠 Punch se seekhi hui latest photos ('+L.length+'/'+LEARN_MAX+')</div>';
+  if(withP.length){
+    h+='<div class="fg-row">'+withP.map(x=>{const dt=new Date(x.at);
+      return '<div class="fg-it"><img src="'+faceUrl(x.p)+'" '+hide+'>'+dt.getDate()+'/'+(dt.getMonth()+1)+(x.src==='approved'?' ✅':'')+'</div>';}).join('')+'</div>';
+  }
+  const noPic=L.length-withP.length;
+  if(noPic>0)h+='<div class="fg-note">'+noPic+' purane sample mein photo nahi hai (sirf code).</div>';
+  if(!L.length)h+='<div class="fg-note">Abhi koi nahi. Clear punch par tool din mein ek naya sample seekhta hai.</div>';
+  el.innerHTML=h;
 }
 async function capturePhoto(){
+  if(!_regUnlocked){showToast('Pehle "Face photos badlo" dabao');return;}
   if(regPhotos.length>=5){showToast('Max 5 photos');return;}
   const v=document.getElementById('regVideo'),c=document.getElementById('regCanvas');
   c.width=v.videoWidth;c.height=v.videoHeight;
@@ -2856,6 +2921,7 @@ async function saveStaff(){
   if(!name){showToast('Enter staff name');return;}
   if(!eid&&getStaff().some(s=>s.name.trim().toLowerCase()===name.toLowerCase())){showToast('⚠️ "'+name+'" naam ka staff already hai!');return;}
   if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
+  if(eid&&regPhotos.length&&!confirm('⚠️ '+regPhotos.length+' nayi photos "'+name+'" ke naam se save hongi aur purane face samples badal jaayenge.\n\nKya camera ke saamne wahi staff ('+name+') hai?'))return;
   if(!regPhotos.length&&eid){
     const staff=getStaff(),s=staff.find(x=>x.id===eid);
     if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.joinDate=joinDate;s.updatedAt=new Date().toISOString();}
@@ -2879,9 +2945,11 @@ async function saveStaff(){
     const staff=getStaff();
     // Compress photo before storing (240x240 max, JPEG q=0.75) — prevents quota-exceeded
     const smallPhoto=await compressPhoto(regPhotos[0],240,0.75);
-    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.joinDate=joinDate;s.descriptors=descs;s.photo=smallPhoto;s.updatedAt=new Date().toISOString();}}
-    else staff.push({id:Date.now().toString(),name,role,shiftIn,shiftOut,salary,salaryBasis,portalPin,pf,esi,dob,joinDate,descriptors:descs,photo:smallPhoto,addedOn:new Date().toISOString(),updatedAt:new Date().toISOString()});
+    const newId=eid||Date.now().toString();
+    if(eid){const s=staff.find(x=>x.id===eid);if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.joinDate=joinDate;s.descriptors=descs;s.photo=smallPhoto;s.regCount=Math.min(5,regPhotos.length);s.regAt=Date.now();s.updatedAt=new Date().toISOString();}}
+    else staff.push({id:newId,name,role,shiftIn,shiftOut,salary,salaryBasis,portalPin,pf,esi,dob,joinDate,descriptors:descs,photo:smallPhoto,regCount:Math.min(5,regPhotos.length),regAt:Date.now(),addedOn:new Date().toISOString(),updatedAt:new Date().toISOString()});
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
+    saveRegPics(newId,regPhotos.slice());
     const ok=await pushStaffNow();
     showToast((ok?'✅ ':'⚠️ ')+name+' saved with '+descs.length+' face samples!'+(ok?'':' (cloud sync fail — internet check karo)'));
   }catch(e){showToast('Error: '+e.message);}
