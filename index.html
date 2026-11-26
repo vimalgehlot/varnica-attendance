@@ -756,7 +756,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="btn btn-outline" onclick="shareReportExcel()" style="padding:6px 12px;font-size:12px;width:auto">📗 Send Excel</button>
       <button class="btn btn-outline" onclick="shareReportHTML()" style="padding:6px 12px;font-size:12px;width:auto">📄 Send Report</button>
       <button class="btn btn-outline" id="salaryRevealBtn" onclick="toggleSalaryReveal()" style="padding:6px 14px;font-size:12px;width:auto">👁️ Show Salary</button>
-      <button class="btn btn-outline" id="expandAllBtn" onclick="toggleAllReportRows()" style="padding:6px 14px;font-size:12px;width:auto">🔽 Sab Expand Karo</button>
+      <button class="btn btn-outline" id="expandAllBtn" onclick="toggleAllReportRows()" style="padding:6px 14px;font-size:12px;width:auto">🔽 Expand All</button>
     </div>
     <div class="report-sticky" id="reportSticky" style="display:none">
       <div class="rs-item"><div class="rs-val" id="rsPct">–</div><div class="rs-lbl">Team Attendance</div></div>
@@ -811,9 +811,9 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
   <div class="admin-scroll hidden" id="tabSettings">
     <div class="card" style="border:1.5px solid var(--brand)">
       <div class="sec-title">🔒 Kiosk Mode</div>
-      <div style="font-size:11.5px;color:var(--text2);margin-bottom:10px">Isse ON karne par is device par sirf <b>Staff</b> tab aur Punch screen milegi — Dashboard, Report, Approvals, Sync aur baaki Settings hide ho jayenge. Sab settings sirf PC se hi manage hongi. Har device ka apna alag setting hai (sync nahi hota).</div>
+      <div style="font-size:11.5px;color:var(--text2);margin-bottom:10px">When ON, this device shows only the <b>Staff</b> tab and the Punch screen. Dashboard, Reports, Approvals, Sync and the other Settings are hidden. Manage all settings from the PC. This setting is separate on each device and does not sync.</div>
       <div class="set-row">
-        <div><div class="set-lbl">Is device ko Kiosk banao</div><div class="set-sub">iPad/tablet ke liye — PC par OFF hi rakhna</div></div>
+        <div><div class="set-lbl">Make this device a Kiosk</div><div class="set-sub">For iPad or tablet. Keep it OFF on the PC.</div></div>
         <label class="switch"><input type="checkbox" id="kioskToggle" onchange="toggleKioskMode()"><span class="switch-slider"></span></label>
       </div>
     </div>
@@ -850,10 +850,18 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
       <button class="btn btn-outline" onclick="faceHealthCheck()" style="width:100%">🔍 Check All Staff Faces</button>
       <div id="faceHealthOut" style="margin-top:12px"></div>
       <div style="border-top:1px solid var(--blush2);margin-top:12px;padding-top:12px">
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px">Auto-learning: har clear punch aur har Manual Review approval se tool us staff ka naya face sample seekhta hai, taaki punch fast aur sure hota jaye.</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px">Auto-learning: after every clear punch and every Manual Review approval, the tool learns a new face sample for that staff, so punching gets faster and more accurate.</div>
         <div id="faceLearnOut"></div>
         <button class="btn btn-outline" onclick="resetFaceLearning()" style="width:100%;margin-top:8px">♻️ Reset learned samples</button>
       </div>
+    </div>
+    <div class="card" id="devKeyCard">
+      <div class="sec-title">🔐 Device Key (security)</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px">This key identifies this device. If the key link does not open here (PC app or home-screen app), paste the key here.</div>
+      <div id="devKeyStatus" style="font-size:12.5px;margin-bottom:8px"></div>
+      <input type="text" class="if" id="devKeyInput" placeholder="Paste the key or the full link here" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:100%;margin-bottom:8px">
+      <button class="btn btn-outline" onclick="saveDevKey()" style="width:100%">💾 Save key</button>
+      <button class="btn btn-outline" onclick="clearDevKey()" style="width:100%;margin-top:6px">🗑️ Remove key from this device</button>
     </div>
     <div class="card" id="storageCard">
       <div class="sec-title">💾 Storage</div>
@@ -862,9 +870,9 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <div class="set-val" id="storageVal">--</div>
       </div>
       <div id="storageBreakdown" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--blush2)"></div>
-      <button class="btn btn-outline" onclick="optimizeStorage()" style="margin-top:8px;width:100%">🧹 Optimize Storage (photos compress karo)</button>
-      <button class="btn" onclick="deepCleanStorage()" style="margin-top:6px;width:100%;background:var(--red);color:#fff">🧨 Deep Clean (agar storage 4 MB+ ho)</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:8px">Optimize = photos compress. Deep Clean = queue + logs + purani photos sab clear. Data safe rahega (VPS pe backup hai).</div>
+      <button class="btn btn-outline" onclick="optimizeStorage()" style="margin-top:8px;width:100%">🧹 Optimize Storage (compress photos)</button>
+      <button class="btn" onclick="deepCleanStorage()" style="margin-top:6px;width:100%;background:var(--red);color:#fff">🧨 Deep Clean (use if storage is over 4 MB)</button>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">Optimize compresses photos. Deep Clean clears the queue, logs and old photos. Your data stays safe (a backup is kept on the server).</div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
         <div><div class="set-lbl">📱 Staff Portal — Show Salary</div><div class="set-sub">ON = staff can see their own Gross/PF/ESI/Net Pay on their phone. OFF = only attendance shows, no salary number at all (not even sent by the server).</div></div>
         <label class="switch"><input type="checkbox" id="staffPortalSalaryToggle" onchange="toggleStaffPortalSalary()"><span class="switch-slider"></span></label>
@@ -878,7 +886,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
         <label class="switch"><input type="checkbox" id="singlePunchToggle" onchange="toggleSinglePunch()"><span class="switch-slider"></span></label>
       </div>
       <div class="set-row" style="margin-top:14px;border-top:1px solid var(--blush2);padding-top:14px">
-        <div><div class="set-lbl">📸 Punch Photo (VPS Save)</div><div class="set-sub">ON = har punch ki photo VPS pe safe (device pe nahi). Report tab mein 📷 icon click karke dekh sakte hain. OFF = photos disable.</div></div>
+        <div><div class="set-lbl">📸 Punch Photo (VPS Save)</div><div class="set-sub">ON = every punch photo is saved safely on the server (not on the device). Tap the 📷 icon in Reports to view it. OFF = photos are turned off.</div></div>
         <label class="switch"><input type="checkbox" id="photoSaveToggle" onchange="togglePhotoSave()"><span class="switch-slider"></span></label>
       </div>
     </div>
@@ -909,17 +917,17 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     </div>
     <div class="card">
       <div class="sec-title">☁️ Cloud Backup <span id="cloudBackupDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text3);margin-left:4px"></span></div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Har save (Staff/Attendance/Settings) automatically VPS ke apne server par bhi backup ho jata hai — Google Sheets se alag, poori tarah aapke control mein. Dot green = last backup successful.</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Every save (Staff, Attendance, Settings) is also backed up automatically to your own server, separate from Google Sheets. Green dot = last backup was successful.</div>
       <button class="btn btn-outline" onclick="pushAllToCloud()" style="margin-bottom:8px">📤 Push to Cloud (is device ka data upload)</button>
       <button class="btn btn-outline" onclick="restoreFromCloud()">📥 Restore from Cloud</button>
-      <div style="font-size:10.5px;color:var(--text3);margin-top:6px">Naya tablet setup karte waqt use karo — poora data automatically wapas aa jayega.</div>
+      <div style="font-size:10.5px;color:var(--text3);margin-top:6px">Use this when setting up a new tablet. All data will come back automatically.</div>
     </div>
     <div class="card">
       <div class="sec-title">💰 Payroll — PF / ESI Rules</div>
       <div class="set-row"><div><div class="set-lbl">PF Rate</div><div class="set-sub">Employee share % (applies if staff's PF = Yes)</div></div><div class="set-val" onclick="editSetting('pfRate')" id="pfRateVal">12%</div></div>
       <div class="set-row"><div><div class="set-lbl">ESI Rate</div><div class="set-sub">Employee share % (applies if staff's ESI = Yes)</div></div><div class="set-val" onclick="editSetting('esiRate')" id="esiRateVal">0.75%</div></div>
       <div class="set-row"><div><div class="set-lbl">ESI Wage Ceiling</div><div class="set-sub">₹/month — ESI applies only below this</div></div><div class="set-val" onclick="editSetting('esiCeiling')" id="esiCeilingVal">₹21,000</div></div>
-      <div style="font-size:11px;color:var(--text3);margin-top:6px">Har staff ke liye PF/ESI "Yes/No" unke Staff form mein set hota hai. Ye rates sirf un par lagte hain jinka PF/ESI "Yes" hai.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">PF/ESI "Yes/No" is set for each staff in the Staff form. These rates apply only to staff whose PF/ESI is "Yes".</div>
     </div>
     <div class="card">
       <div class="sec-title">🔐 Change Admin PIN</div>
@@ -962,7 +970,7 @@ body{-webkit-font-smoothing:antialiased;font-weight:500;}
     <div class="ig"><label class="il">Date of Birth 🎂 (optional)</label><input type="date" class="if" id="sDob"></div>
     <div class="ig"><label class="il">Joining Date 📅 (blank = from first punch)</label><input type="date" class="if" id="sJoin"></div>
     <div id="faceGallery" class="face-gal" style="display:none"></div>
-    <button class="btn btn-outline" id="unlockCamBtn" style="display:none;margin-bottom:10px" onclick="unlockRegCam()">🔓 Face photos badlo (camera chalu karo)</button>
+    <button class="btn btn-outline" id="unlockCamBtn" style="display:none;margin-bottom:10px" onclick="unlockRegCam()">🔓 Change face photos (turn on camera)</button>
     <div id="regCamBlock">
     <label class="il">Face Registration (3-5 photos)</label>
     <div class="reg-cam-wrap"><video id="regVideo" autoplay muted playsinline></video><div class="reg-guide-ov"><div class="reg-guide"></div></div></div>
@@ -1136,8 +1144,8 @@ const DB={
     }catch(e){
       if(e&&(e.name==='QuotaExceededError'||e.code===22||String(e).includes('quota'))){
         // Try emergency cleanup: strip old punch photos
-        try{emergencyCleanupPhotos();localStorage.setItem('vj_'+k,JSON.stringify(v));if(CLOUD_SYNC_KEYS.includes(k))cloudBackupSync(k,v);showToast('⚠️ Storage bhar gaya tha — auto-cleanup kiya. Ho gaya.');return true;}catch(e2){
-          showToast('❌ Storage FULL! Settings → Optimize Storage dabao, ya purani photos delete karo.');
+        try{emergencyCleanupPhotos();localStorage.setItem('vj_'+k,JSON.stringify(v));if(CLOUD_SYNC_KEYS.includes(k))cloudBackupSync(k,v);showToast('⚠️ Storage was full. Auto-cleanup done.');return true;}catch(e2){
+          showToast('❌ Storage is FULL. Go to Settings → Optimize Storage, or delete old photos.');
           console.error('Storage quota exceeded:',e);
           return false;
         }
@@ -1308,9 +1316,9 @@ function cloudBackupSync(key,value){
   },800);
 }
 async function pushAllToCloud(){
-  if(!confirm('Is device ka Staff + Attendance + Settings VPS cloud pe upload hoga (baaki devices ke records ke saath safely merge karke). Aage badhein?'))return;
+  if(!confirm('This will upload the Staff, Attendance and Settings of this device to the cloud server (safely merged with records from other devices). Continue?'))return;
   try{
-    showToast('📤 Cloud pe bhej rahe hain...',4000);
+    showToast('📤 Uploading to the cloud...',4000);
     // First pull VPS copy and merge, so we never wipe another device's punches
     let cloudAtt=[];
     try{
@@ -1335,11 +1343,11 @@ async function pushAllToCloud(){
       push('settings',getSettings())
     ]);
     renderTodayLog();updateDashStats();
-    showToast('✅ Cloud pe upload ho gaya! Ab baaki devices pe Refresh dabao.',6000);
+    showToast('✅ Uploaded to the cloud. Now tap Refresh on the other devices.',6000);
   }catch(e){showToast('❌ Push failed: '+e.message,6000);}
 }
 async function restoreFromCloud(){
-  if(!confirm('Ye VPS ke cloud backup se poora data (Staff + Attendance + Settings) laayega aur is device ka current data replace karega.\n\nAage badhein?'))return;
+  if(!confirm('This will load all data (Staff, Attendance, Settings) from the cloud backup and replace the data on this device.\n\nContinue?'))return;
   try{
     showToast('Restoring from cloud...');
     const res=await fetch('/api/restore?bucket='+TOOL_ID);
@@ -1399,7 +1407,7 @@ function toggleKioskMode(){
   const on=document.getElementById('kioskToggle').checked;
   DB.set('kioskMode',on);
   applyKioskMode();
-  showToast(on?'🔒 Kiosk Mode ON — sirf Staff + Punch milega':'🔓 Kiosk Mode OFF — full access');
+  showToast(on?'🔒 Kiosk Mode ON. Only Staff and Punch are available.':'🔓 Kiosk Mode OFF. Full access.');
   if(on)aTab('staff');
 }
 function applyKioskMode(){
@@ -1425,7 +1433,7 @@ const getStaff=()=>{
   if(changed){try{localStorage.setItem('vj_staff',JSON.stringify(out));}catch(e){}}
   return out;
 };
-const setStaff=v=>{if(!DB.set('staff',v)){showToast('❌ Staff save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
+const setStaff=v=>{if(!DB.set('staff',v)){showToast('❌ Staff could not be saved. Storage is full. Go to Settings → Optimize Storage.',6000);return false;}return true;};
 const getAtt=()=>DB.get('att')||[];
 function dedupeAtt(arr){
   // Safety net: if the same staffId+date ever ends up as two separate records
@@ -1467,7 +1475,7 @@ function dedupeAtt(arr){
   });
   return order.map(k=>byKey[k]);
 }
-const setAtt=v=>{const deduped=dedupeAtt(Array.isArray(v)?v:[]);if(!DB.set('att',deduped)){showToast('❌ Attendance save FAIL — storage full. Settings → Optimize Storage dabao',6000);return false;}return true;};
+const setAtt=v=>{const deduped=dedupeAtt(Array.isArray(v)?v:[]);if(!DB.set('att',deduped)){showToast('❌ Attendance could not be saved. Storage is full. Go to Settings → Optimize Storage.',6000);return false;}return true;};
 const getSettings=()=>Object.assign({grace:10,halfDay:4,earlyOut:15,weekOff:0,holidays:[],adminPin:'1234',pfRate:12,esiRate:0.75,esiCeiling:21000,localPhotoSave:true,singlePunchMode:true,reasonCompulsory:true,staffPortalSalary:true,absentPct:30,fullDayPct:90,halfDayPct:70},DB.get('settings')||{});
 const setSettings=v=>{if(!DB.set('settings',v)){showToast('❌ Settings save FAIL');return false;}return true;};
 const getPending=()=>DB.get('pending')||[];
@@ -1601,7 +1609,7 @@ async function proactiveStorageCheck(){
   }
   if(n)setStaff(staff);
   const after=getStorageBytes()/1024/1024;
-  if(after>4.3)showToast('⚠️ Storage abhi bhi zyada hai ('+after.toFixed(1)+' MB) — Settings → Optimize Storage check karo');
+  if(after>4.3)showToast('⚠️ Storage is still high ('+after.toFixed(1)+' MB). Check Settings → Optimize Storage.');
 }
 
 // ══════════════════════════════════════════════
@@ -1645,7 +1653,7 @@ const MODEL=GITHUB_PAGES_MODEL;
       }
     }
     if(!loaded){
-      msg.textContent='Models nahi mile. Internet check karo & refresh karo.';
+      msg.textContent='Face models could not be loaded. Check the internet and refresh.';
       document.getElementById('loadingBar').style.background='var(--red)';
       return;
     }
@@ -1764,11 +1772,30 @@ function logScanStat(x){
   try{const a=DB.get('scanStats')||[];x.at=new Date().toISOString();a.push(x);DB.set('scanStats',a.slice(-100));}catch(e){}
   try{reviewApi('/stat',{s:x});}catch(e){}
 }
+// ── Device key: paste it here when the private link cannot be opened (PC app / home-screen app) ──
+function renderDevKey(){
+  const el=document.getElementById('devKeyStatus');if(!el)return;
+  let k='';try{k=localStorage.getItem('vj_devkey')||'';}catch(e){}
+  el.innerHTML=k?'✅ This device has a key <span style="color:var(--text3)">('+k.slice(0,4)+'…'+k.slice(-4)+')</span>':'⚠️ This device has no key';
+}
+function saveDevKey(){
+  const inp=document.getElementById('devKeyInput');let v=(inp.value||'').trim();
+  const m=/key=([A-Za-z0-9_-]{16,128})/.exec(v);if(m)v=m[1];
+  if(!/^[A-Za-z0-9_-]{16,128}$/.test(v)){showToast('❌ This key does not look right. Please copy it again and paste.');return;}
+  try{localStorage.setItem('vj_devkey',v);}catch(e){showToast('❌ Key could not be saved');return;}
+  inp.value='';renderDevKey();showToast('✅ Key saved');
+}
+function clearDevKey(){
+  if(!confirm('Remove the key from this device?'))return;
+  try{localStorage.removeItem('vj_devkey');}catch(e){}
+  renderDevKey();showToast('Key removed');
+}
 function renderFaceLearnInfo(){
+  renderDevKey();
   const el=document.getElementById('faceLearnOut');if(!el)return;
   const o=faceLearnAll(),staff=getStaff().filter(s=>!s.leftDate);
   const n=staff.reduce((a,s)=>a+((o[s.id]||[]).length),0),who=staff.filter(s=>(o[s.id]||[]).length).length;
-  el.innerHTML='<div style="font-size:12px;color:var(--text2)">🧠 '+n+' learned face samples for '+who+' of '+staff.length+' staff (max '+LEARN_MAX+' each).</div><div id="scanSpeedOut" style="font-size:12px;color:var(--text2);margin-top:6px">⏱ Checking scan speed...</div><div style="font-size:12px;color:var(--text2);margin-top:6px">🔐 Device key: '+(hasDeviceKey()?'✅ registered':'⚪ not set (abhi zaroori nahi)')+'</div>';
+  el.innerHTML='<div style="font-size:12px;color:var(--text2)">🧠 '+n+' learned face samples for '+who+' of '+staff.length+' staff (max '+LEARN_MAX+' each).</div><div id="scanSpeedOut" style="font-size:12px;color:var(--text2);margin-top:6px">⏱ Checking scan speed...</div><div style="font-size:12px;color:var(--text2);margin-top:6px">🔐 Device key: '+(hasDeviceKey()?'✅ registered':'⚪ not set')+'</div>';
   fetch('/api/review/stat?bucket='+encodeURIComponent(TOOL_ID),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{
     const t=document.getElementById('scanSpeedOut');if(!t)return;
     if(!j||!j.ok||!j.total){t.textContent='⏱ No scan data yet.';return;}
@@ -1776,10 +1803,10 @@ function renderFaceLearnInfo(){
   }).catch(()=>{});
 }
 async function resetFaceLearning(){
-  if(!confirm('Sab staff ke auto-learned face samples hata dein?\n\nRegistration wali photos safe rahengi.'))return;
+  if(!confirm('Remove the auto-learned face samples of all staff?\n\nRegistration photos will stay safe.'))return;
   const r=await reviewApi('/learn/reset',{});
   if(r&&r.ok){storeFaceLearn({});DB.set('faceLearnQ',[]);showToast('✅ Learned samples cleared');renderFaceLearnInfo();}
-  else showToast('❌ Server se clear nahi hua — internet check karo');
+  else showToast('❌ Could not clear on the server. Check the internet.');
 }
 async function buildMatcher(){
   const staff=getStaff().filter(s=>!s.leftDate&&s.descriptors&&s.descriptors.length);
@@ -2126,7 +2153,7 @@ async function startScanLoop(){
           scanDiag(video,rw,null);
           if(!box){guide.className='face-guide';label.textContent='Position your face in the frame';resetTry();}
           else if(rw<MIN_FACE_RATIO){guide.className='face-guide detected';label.textContent='Please move closer...';}
-          else if(rw>MAX_FACE_RATIO){guide.className='face-guide detected';label.textContent='⬅ Thoda peeche ho jao — poora chehra frame mein aaye';}
+          else if(rw>MAX_FACE_RATIO){guide.className='face-guide detected';label.textContent='⬅ Move back a little so your full face is in the frame';}
           else facePresent=true;
         }
         if(facePresent){
@@ -2179,7 +2206,7 @@ async function startScanLoop(){
               // One blurry / turned frame is normal — try again before sending to Manual Review.
               resetMatchConfirm();failFrames++;
               if(failFrames<FAIL_FRAMES){
-                label.textContent=m.reason==='ambiguous'?'Not clear — please look straight at the camera':'Seedha camera mein dekho — checking again...';
+                label.textContent=m.reason==='ambiguous'?'Not clear — please look straight at the camera':'Look straight at the camera. Checking again...';
               }else{
                 logScanStat({ms:Math.round(performance.now()-t0),frames,result:'review',dist:m.dist,gap:m.gap});
                 resetTry();
@@ -2648,7 +2675,7 @@ function submitWarning(){
     // must count as a newer edit, or the merge keeps the reason-less copy.
     if(rec.manual===true)rec.manualAt=new Date().toISOString();
     if(!setAtt(att)){
-      const m=document.getElementById('wpReqMsg');m.style.display='block';m.textContent='❌ Save fail hua (storage full). Maine auto-cleanup kar diya — "Submit" phir se dabao.';
+      const m=document.getElementById('wpReqMsg');m.style.display='block';m.textContent='❌ Could not save (storage full). Auto-cleanup was done. Please tap "Submit" again.';
       return;
     }
     syncRecord(rec);
@@ -2785,7 +2812,7 @@ async function reviewSync(){
     if(sigBefore!==sigAfter){
       const tab=document.getElementById('tabAppr');
       if(tab&&!tab.classList.contains('hidden'))renderApprovals();
-      if(added&&!isKioskMode())showToast('🔔 Naya Manual Review aaya ('+added+')');
+      if(added&&!isKioskMode())showToast('🔔 New Manual Review item ('+added+')');
     }
     updateApprBadge();
   }catch(e){console.warn('[review sync]',e);}
@@ -2806,7 +2833,7 @@ function sharePortalLink(staffId){
   if(!s){showToast('Staff not found');return;}
   if(!s.portalPin){showToast('Please set this staff\'s Portal PIN first');return;}
   const link=location.origin+'/me.html?id='+encodeURIComponent(s.id);
-  const msg='Hello '+s.name+',\n\nYou can view your attendance details here:\n'+link+'\n\nPIN: '+s.portalPin+'\n\n(This is for viewing only — punching is done on the office device. Please do not share your PIN with anyone.)\n\n— — —\n\nNamaste '+s.name+',\n\nAap apni attendance ki jaankari yahan dekh sakte hain:\n'+link+'\n\nPIN: '+s.portalPin+'\n\n(Ye sirf dekhne ke liye hai — punch office wale device se hi hoga. PIN kisi ko mat batana.)';
+  const msg='Hello '+s.name+',\n\nYou can view your attendance details here:\n'+link+'\n\nPIN: '+s.portalPin+'\n\n(This is for viewing only — punching is done on the office device. Please do not share your PIN with anyone.)';
   window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
 }
 function renderStaffList(){
@@ -2854,7 +2881,7 @@ function setRegLock(locked,s,isEdit){
 }
 function unlockRegCam(){
   const id=document.getElementById('editStaffId').value,s=getStaff().find(x=>x.id===id);
-  if(!confirm('Camera chalu karke "'+(s?s.name:'staff')+'" ki nayi face photos leni hain?\n\nCamera ke saamne sirf wahi staff hona chahiye (aap nahi).'))return;
+  if(!confirm('Turn on the camera and take new face photos for "'+(s?s.name:'this staff')+'"?\n\nOnly that staff member should be in front of the camera (not you).'))return;
   setRegLock(false,s,true);startRegCam();
 }
 function faceUrl(name,v){return apiImg('/api/punch-photo/'+TOOL_ID+'/'+name+(v?'?v='+v:''));}
@@ -2869,32 +2896,61 @@ async function saveRegPics(staffId,pics){
     try{const small=await compressPhoto(pics[i],200,0.72);if(small)uploadFacePic('reg_'+staffId+'_'+(i+1)+'.jpg',small);}catch(e){}
   }
 }
+function viewFaceImg(src){
+  if(!src)return;
+  const img=document.getElementById('photoLightboxImg');
+  img.alt='';img.src=src;
+  openPopup('photoLightbox');
+}
+function recentPunchPics(staffId,max){
+  const out=[];
+  getAtt().forEach(a=>{
+    if(!a||String(a.staffId)!==String(staffId))return;
+    if(a.hasInPhoto)out.push({d:a.date,io:'in',t:a.inTime||''});
+    if(a.hasOutPhoto)out.push({d:a.date,io:'out',t:a.outTime||''});
+  });
+  out.sort((x,y)=>x.d===y.d?(x.io===y.io?0:(x.io==='out'?-1:1)):(x.d<y.d?1:-1));
+  return out.slice(0,max||5);
+}
 function renderFaceGallery(s){
   const el=document.getElementById('faceGallery');if(!el||!s)return;
   const hide='onerror="this.parentNode.style.display=\'none\'"';
+  const tap='onclick="viewFaceImg(this.src)" style="cursor:pointer"';
   let h='<div class="face-gal-t">📸 Registered photos</div>';
   const n=Math.min(5,s.regCount||0);
   if(n){
     h+='<div class="fg-row">';
-    for(let i=1;i<=n;i++)h+='<div class="fg-it"><img src="'+faceUrl('reg_'+s.id+'_'+i+'.jpg',s.regAt)+'" '+hide+'>#'+i+'</div>';
+    for(let i=1;i<=n;i++)h+='<div class="fg-it"><img src="'+faceUrl('reg_'+s.id+'_'+i+'.jpg',s.regAt)+'" '+tap+' '+hide+'>#'+i+'</div>';
     h+='</div>';
   }else{
-    h+='<div class="fg-row">'+(s.photo?'<div class="fg-it"><img src="'+s.photo+'">1 photo</div>':'')+'</div>'
-      +'<div class="fg-note">Is staff ki baaki registration photos pehle save nahi hoti thi (sirf face ka code bana tha). "Face photos badlo" se 3-5 photos dobara lo, tab ye yahan dikhengi.</div>';
+    h+='<div class="fg-row">'+(s.photo?'<div class="fg-it"><img src="'+s.photo+'" '+tap+'>1 photo</div>':'')+'</div>'
+      +'<div class="fg-note">Only 1 photo is saved for this staff. Older registrations kept only the face data. Tap "Change face photos" and take 3 to 5 new photos to see them here.</div>';
+  }
+  // Latest real punch photos (what the camera captured at each punch)
+  const P=recentPunchPics(s.id,5);
+  h+='<div class="face-gal-t">🕘 Recent punch photos (for checking)</div>';
+  if(P.length){
+    h+='<div class="fg-row">'+P.map(x=>{
+      const p=x.d.split('-'),lbl=(+p[2])+'/'+(+p[1]);
+      return '<div class="fg-it"><img src="'+getPunchPhotoUrl(s.id,x.d,x.io,x.t)+'" '+tap+' '+hide+'>'+lbl+' '+x.io.toUpperCase()+(x.t?'<br>'+x.t:'')+'</div>';
+    }).join('')+'</div>';
+  }else{
+    h+='<div class="fg-note">No punch photos yet.</div>';
   }
   const L=(faceLearnAll()[s.id]||[]).slice().reverse(),withP=L.filter(x=>x.p);
-  h+='<div class="face-gal-t">🧠 Punch se seekhi hui latest photos ('+L.length+'/'+LEARN_MAX+')</div>';
+  h+='<div class="face-gal-t">🧠 Photos the tool uses now to recognise this face ('+L.length+'/'+LEARN_MAX+')</div>';
   if(withP.length){
     h+='<div class="fg-row">'+withP.map(x=>{const dt=new Date(x.at);
-      return '<div class="fg-it"><img src="'+faceUrl(x.p)+'" '+hide+'>'+dt.getDate()+'/'+(dt.getMonth()+1)+(x.src==='approved'?' ✅':'')+'</div>';}).join('')+'</div>';
+      return '<div class="fg-it"><img src="'+faceUrl(x.p)+'" '+tap+' '+hide+'>'+dt.getDate()+'/'+(dt.getMonth()+1)+(x.src==='approved'?' ✅':'')+'</div>';}).join('')+'</div>';
   }
   const noPic=L.length-withP.length;
-  if(noPic>0)h+='<div class="fg-note">'+noPic+' purane sample mein photo nahi hai (sirf code).</div>';
-  if(!L.length)h+='<div class="fg-note">Abhi koi nahi. Clear punch par tool din mein ek naya sample seekhta hai.</div>';
+  if(noPic>0)h+='<div class="fg-note">'+noPic+' older sample'+(noPic>1?'s have':' has')+' no photo saved (face data only).</div>';
+  if(!L.length)h+='<div class="fg-note">None yet. After a clear punch, the tool learns one new sample per day.</div>';
+  h+='<div class="fg-note">Tap any photo to open it larger. The "uses now" list updates by itself as the tool learns newer clear photos and drops the oldest.</div>';
   el.innerHTML=h;
 }
 async function capturePhoto(){
-  if(!_regUnlocked){showToast('Pehle "Face photos badlo" dabao');return;}
+  if(!_regUnlocked){showToast('First tap "Change face photos"');return;}
   if(regPhotos.length>=5){showToast('Max 5 photos');return;}
   const v=document.getElementById('regVideo'),c=document.getElementById('regCanvas');
   c.width=v.videoWidth;c.height=v.videoHeight;
@@ -2919,20 +2975,20 @@ async function saveStaff(){
   const joinDate=document.getElementById('sJoin').value||'';
   const eid=document.getElementById('editStaffId').value;
   if(!name){showToast('Enter staff name');return;}
-  if(!eid&&getStaff().some(s=>s.name.trim().toLowerCase()===name.toLowerCase())){showToast('⚠️ "'+name+'" naam ka staff already hai!');return;}
+  if(!eid&&getStaff().some(s=>s.name.trim().toLowerCase()===name.toLowerCase())){showToast('⚠️ A staff named "'+name+'" already exists');return;}
   if(!regPhotos.length&&!eid){showToast('Capture at least 1 photo');return;}
-  if(eid&&regPhotos.length&&!confirm('⚠️ '+regPhotos.length+' nayi photos "'+name+'" ke naam se save hongi aur purane face samples badal jaayenge.\n\nKya camera ke saamne wahi staff ('+name+') hai?'))return;
+  if(eid&&regPhotos.length&&!confirm('⚠️ '+regPhotos.length+' new photos will be saved for "'+name+'" and the old face samples will be replaced.\n\nIs '+name+' the person in front of the camera?'))return;
   if(!regPhotos.length&&eid){
     const staff=getStaff(),s=staff.find(x=>x.id===eid);
     if(s){s.name=name;s.role=role;s.shiftIn=shiftIn;s.shiftOut=shiftOut;s.salary=salary;s.salaryBasis=salaryBasis;s.portalPin=portalPin;s.pf=pf;s.esi=esi;s.dob=dob;s.joinDate=joinDate;s.updatedAt=new Date().toISOString();}
     setStaff(staff);closeModal('staffModal');stopRegCam();renderStaffList();
     const ok=await pushStaffNow();
-    showToast(ok?'✅ Updated aur cloud pe sync ho gaya!':'⚠️ Update ho gaya par cloud sync fail — internet check karo',ok?3000:6000);
+    showToast(ok?'✅ Updated and synced to the cloud.':'⚠️ Updated, but cloud sync failed. Check the internet.',ok?3000:6000);
     return;
   }
   _staffSaving=true;
   const saveBtn=document.getElementById('saveStaffBtn');
-  if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='⏳ Saving... face process ho raha hai';saveBtn.style.opacity='0.6';}
+  if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='⏳ Saving... processing the face';saveBtn.style.opacity='0.6';}
   try{
     const descs=[];
     for(const p of regPhotos){
@@ -2951,7 +3007,7 @@ async function saveStaff(){
     setStaff(staff);await buildMatcher();closeModal('staffModal');stopRegCam();renderStaffList();
     saveRegPics(newId,regPhotos.slice());
     const ok=await pushStaffNow();
-    showToast((ok?'✅ ':'⚠️ ')+name+' saved with '+descs.length+' face samples!'+(ok?'':' (cloud sync fail — internet check karo)'));
+    showToast((ok?'✅ ':'⚠️ ')+name+' saved with '+descs.length+' face samples!'+(ok?'':' (cloud sync failed. Check the internet.)'));
   }catch(e){showToast('Error: '+e.message);}
   finally{
     _staffSaving=false;
@@ -2965,7 +3021,7 @@ async function saveTiming(){
   if(s){s.shiftIn=document.getElementById('tIn').value;s.shiftOut=document.getElementById('tOut').value;s.updatedAt=new Date().toISOString();}
   setStaff(staff);closeModal('timingModal');renderStaffList();
   const ok=await pushStaffNow();
-  showToast(ok?'✅ Timing updated aur cloud pe sync ho gaya!':'⚠️ Timing save ho gayi par cloud sync fail — internet check karke phir se kholo taaki confirm ho jaye',ok?3000:6000);
+  showToast(ok?'✅ Timing updated and synced to the cloud.':'⚠️ Timing saved, but cloud sync failed. Check the internet and open this again to confirm.',ok?3000:6000);
 }
 
 // ══════════════════════════════════════════════
@@ -2980,7 +3036,7 @@ function renderApprovals(){
     const photoHtml=photoSrc
       ? `<img class="appr-photo" src="${photoSrc}" alt="Unknown face" onerror="this.onerror=null;this.src='${vpsUrl}';setTimeout(()=>{if(!this.complete||this.naturalWidth===0)this.style.display='none';},1500)">`
       : `<div class="appr-photo" style="background:var(--blush2);display:flex;align-items:center;justify-content:center;height:180px;color:var(--text3)"><span style="font-size:36px">👤</span></div>`;
-    return `<div class="appr-card">${photoHtml}<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div><div style="font-size:13px;font-weight:600">Unknown Face</div><div style="font-size:11px;color:var(--text3)">${p.date} at ${p.time}</div></div><span class="tag tag-warn">${_reviewBusy[p.id]?'Dusre device pe chal raha hai':'Pending'}</span></div><div class="ig"><label class="il">Assign to Staff</label><select class="if" id="as_${p.id}"><option value="">-- Select --</option>${staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('')}</select></div><div class="appr-actions"><button class="btn-approve" onclick="approveEntry('${p.id}')">✅ Approve</button><button class="btn-reject" onclick="rejectEntry('${p.id}')">❌ Reject</button></div></div>`;
+    return `<div class="appr-card">${photoHtml}<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div><div style="font-size:13px;font-weight:600">Unknown Face</div><div style="font-size:11px;color:var(--text3)">${p.date} at ${p.time}</div></div><span class="tag tag-warn">${_reviewBusy[p.id]?'Being handled on another device':'Pending'}</span></div><div class="ig"><label class="il">Assign to Staff</label><select class="if" id="as_${p.id}"><option value="">-- Select --</option>${staff.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('')}</select></div><div class="appr-actions"><button class="btn-approve" onclick="approveEntry('${p.id}')">✅ Approve</button><button class="btn-reject" onclick="rejectEntry('${p.id}')">❌ Reject</button></div></div>`;
   }).join('');
 }
 // Crop to a centred square, same look as a normal punch photo.
@@ -3028,7 +3084,7 @@ async function approveEntry(id){
     // "I am handling this" — if another device already took it, stop here (no double punch).
     if(navigator.onLine){
       claim=await reviewApi('/claim',{id});
-      if(claim&&claim.claimed===false){showToast('⚠️ Ye entry dusre device se handle ho gayi / ho rahi hai. List refresh ho rahi hai.',5000);await reviewSync();renderApprovals();return;}
+      if(claim&&claim.claimed===false){showToast('⚠️ This entry is already being handled on another device. Refreshing the list.',5000);await reviewSync();renderApprovals();return;}
     }
     // The punch belongs to the moment the face was SCANNED (e.g. 8:10) — not to the moment
     // the admin taps Approve (8:43) — and to that day, even if approved the next morning.
@@ -3055,7 +3111,7 @@ async function approveEntry(id){
 async function rejectEntry(id){
   const e0=getPending().find(x=>x.id===id);if(!e0||e0.status!=='pending')return;
   let rr=null;if(navigator.onLine)rr=await reviewApi('/resolve',{id,status:'rejected'});
-  if(rr&&rr.applied===false){showToast('⚠️ Ye entry dusre device pe pehle hi handle ho chuki hai.',5000);await reviewSync();renderApprovals();return;}
+  if(rr&&rr.applied===false){showToast('⚠️ This entry was already handled on another device.',5000);await reviewSync();renderApprovals();return;}
   const p=getPending(),e=p.find(x=>x.id===id);if(e){e.status='rejected';delete e.photo;if(rr&&rr.ok)e.rs=1;else delete e.rs;}setPending(p);renderApprovals();updateApprBadge();showToast('Rejected');
 }
 function updateApprBadge(){const c=getPending().filter(p=>p.status==='pending').length,b=document.getElementById('apprBadge');b.style.display=c?'inline-flex':'none';b.textContent=c;}
@@ -3095,7 +3151,7 @@ function renderPctBandSummary(s){
   html+='<div>🔴 <b>0–'+absent+'%</b> kaam → <b>Absent</b></div>';
   html+='<div>🟠 <b>'+absent+'–'+half+'%</b> kaam → <b>Half Day</b> (aadhi salary)</div>';
   if(half<full)html+='<div>🟡 <b>'+half+'–'+full+'%</b> kaam → <b>Early Out</b> (poori salary + reason)</div>';
-  else html+='<div style="color:var(--text3)">🟡 Early Out (%) gap khaali hai — Half Day Cutoff aur Full Day Threshold barabar hain</div>';
+  else html+='<div style="color:var(--text3)">🟡 Early Out (%) has no gap because Half Day Cutoff and Full Day Threshold are equal</div>';
   html+='<div>🟢 <b>'+full+'%+</b> kaam → <b>Present</b> / Overtime</div>';
   html+='</div>';
   el.innerHTML=html;
@@ -3108,7 +3164,7 @@ function inspectDay(){
   if(!out)return;
   const sid=document.getElementById('inspStaff').value;
   const date=document.getElementById('inspDate').value;
-  if(!sid||!date){out.innerHTML='<div style="font-size:12px;color:var(--red)">Staff aur date dono chuniye.</div>';return;}
+  if(!sid||!date){out.innerHTML='<div style="font-size:12px;color:var(--red)">Please select both a staff and a date.</div>';return;}
   const staff=getStaff().find(s=>String(s.id)===String(sid));
   const all=getAtt();
   const loose=all.filter(a=>String(a.staffId)===String(sid)&&a.date===date);
@@ -3130,7 +3186,7 @@ function inspectDay(){
 }
 function clearDayTombstone(sid,date){
   removeTombstone(sid,date);
-  showToast('🧹 Delete-marker hataya — ab is din ka record safe hai');
+  showToast('🧹 Delete marker removed. This day\'s record is now safe.');
   inspectDay();
 }
 function fillInspectStaff(){
@@ -3146,8 +3202,8 @@ function refreshStorageDisplay(){
   if(!el)return;
   el.textContent=fmtBytes(bytes);
   let color='var(--green)',warn='';
-  if(mb>4){color='var(--red)';warn=' ⚠️ Bharne wala hai — Optimize dabao!';}
-  else if(mb>2.5){color='var(--orange)';warn=' — thodi zyada hai';}
+  if(mb>4){color='var(--red)';warn=' ⚠️ Almost full. Tap Optimize!';}
+  else if(mb>2.5){color='var(--orange)';warn=' (a little high)';}
   el.style.color=color;
   const staff=getStaff();
   sub.textContent=staff.length+' staff · Browser limit ~5 MB'+warn;
@@ -3180,7 +3236,7 @@ function toggleStaffPortalSalary(){
 }
 function toggleReasonCompulsory(){
   const s=getSettings();s.reasonCompulsory=document.getElementById('reasonCompulsoryToggle').checked;setSettings(s);
-  showToast(s.reasonCompulsory?'✍️ Reason ab compulsory hai — Skip nahi hoga':'⏭️ Reason ab optional hai — Skip button milega');
+  showToast(s.reasonCompulsory?'✍️ Reason is now required. Skip is not allowed.':'⏭️ Reason is now optional. A Skip button will show.');
 }
 function toggleSinglePunch(){
   const s=getSettings();s.singlePunchMode=document.getElementById('singlePunchToggle').checked;setSettings(s);
@@ -3188,11 +3244,11 @@ function toggleSinglePunch(){
 }
 function togglePhotoSave(){
   const s=getSettings();s.localPhotoSave=document.getElementById('photoSaveToggle').checked;setSettings(s);
-  showToast(s.localPhotoSave?'📸 Punch photos VPS pe upload hongi (Report mein 📷 icon)':'🚫 Punch photos disable — device aur VPS dono jagah save nahi hongi');
+  showToast(s.localPhotoSave?'📸 Punch photos will be saved on the server (see the 📷 icon in Reports)':'🚫 Punch photos are off. They will not be saved anywhere.');
   refreshStorageDisplay();
 }
 async function hardRefreshApp(){
-  if(!confirm('🔄 Fresh Refresh:\n\n• Storage clean karega\n• Cache clear karega (naya code lega)\n• App reload karega\n\nData safe rahega. Aage badhein?'))return;
+  if(!confirm('🔄 Fresh Refresh:\n\n• Cleans storage\n• Clears cache (loads the newest version)\n• Reloads the app\n\nYour data stays safe. Continue?'))return;
   showToast('🔄 Cleaning...',3000);
   try{
     emergencyCleanupPhotos();
@@ -3210,9 +3266,9 @@ async function hardRefreshApp(){
   },500);
 }
 async function deepCleanStorage(){
-  if(!confirm('Deep Clean karega:\n\n• Google Sheets sync queue clear\n• Sync logs clear\n• Purani punch photos records se remove\n• Staff photos aggressive compress\n\nStaff/attendance data safe rahega. VPS backup already hai.\n\nAage badhein?'))return;
+  if(!confirm('Deep Clean will:\n\n• Clear the Google Sheets sync queue\n• Clear sync logs\n• Remove old punch photos from records\n• Compress staff photos strongly\n\nStaff and attendance data stays safe. A server backup already exists.\n\nContinue?'))return;
   const beforeMb=(getStorageBytes()/1024/1024).toFixed(2);
-  showToast('🧨 Deep clean chal raha hai...',5000);
+  showToast('🧨 Deep clean is running...',5000);
   // 1. Standard emergency cleanup (photos+queue+logs)
   emergencyCleanupPhotos();
   // 2. Fully clear sync queue (not just trim — Google Sheets can be re-synced from Sync tab if needed)
@@ -3230,7 +3286,7 @@ async function deepCleanStorage(){
   showToast('✅ Deep clean done: '+beforeMb+' MB → '+afterMb+' MB',6000);
 }
 async function optimizeStorage(){
-  showToast('🔄 Photos compress ho rahe hain... wait karo');
+  showToast('🔄 Compressing photos... please wait');
   const staff=getStaff();let n=0,before=0,after=0,dn=0;
   for(const s of staff){
     if(s.photo&&s.photo.length>15000){
@@ -3258,19 +3314,19 @@ async function optimizeStorage(){
   if(ap)setAtt(att);
   const pendResult=prunePendingPhotos();
   refreshStorageDisplay();
-  showToast('✅ '+n+' photos compress · '+dn+' face-data compact · '+ap+' punch photos · '+pendResult.stripped+' pending-approval photos hataayi',6500);
+  showToast('✅ '+n+' photos compress · '+dn+' face-data compact · '+ap+' punch photos · '+pendResult.stripped+' pending-approval photos removed',6500);
 }
 function saveSetting(){const s=getSettings();s.weekOff=parseInt(document.getElementById('weekOffSel').value);setSettings(s);showToast('Updated');}
 function editSetting(key){editingKey=key;const s=getSettings();const labels={grace:'Grace Period (min)',halfDay:'Half Day Threshold (hrs)',earlyOut:'Early Out Threshold (min)',pfRate:'PF Rate (%)',esiRate:'ESI Rate (%)',esiCeiling:'ESI Wage Ceiling (₹)',absentPct:'Absent Threshold (%)',fullDayPct:'Full Day Threshold (%)',halfDayPct:'Half Day Cutoff (%)'};document.getElementById('settingLbl').textContent=labels[key];document.getElementById('settingInput').value=s[key];openModal('settingModal');}
 function saveSettingVal(){const v=parseFloat(document.getElementById('settingInput').value);if(isNaN(v)||v<0){showToast('Invalid');return;}
   const pctKeys=['absentPct','fullDayPct','halfDayPct'];
-  if(pctKeys.includes(editingKey)&&v>100){showToast('0–100 ke beech likho');return;}
+  if(pctKeys.includes(editingKey)&&v>100){showToast('Enter a value between 0 and 100');return;}
   const s=getSettings();
   const fullDay=(editingKey==='fullDayPct')?v:s.fullDayPct;
   const halfDay=(editingKey==='halfDayPct')?v:s.halfDayPct;
   const absent=(editingKey==='absentPct')?v:s.absentPct;
   if(pctKeys.includes(editingKey)&&!(absent<=halfDay&&halfDay<=fullDay)){
-    showToast('Order sahi rakho: Absent % ≤ Half Day % ≤ Full Day %');return;
+    showToast('Keep this order: Absent % ≤ Half Day % ≤ Full Day %');return;
   }
   s[editingKey]=v;setSettings(s);loadSettingsUI();closeModal('settingModal');showToast('Updated!');}
 function addHoliday(){const d=document.getElementById('holDate').value,n=document.getElementById('holName').value.trim();if(!d||!n){showToast('Enter date and name');return;}const s=getSettings();if(!s.holidays)s.holidays=[];s.holidays.push({date:d,name:n});setSettings(s);document.getElementById('holDate').value='';document.getElementById('holName').value='';renderHolidays();showToast('Holiday added');}
@@ -3404,7 +3460,7 @@ function generateReport(){
   renderStickyBar(summaries);
   renderHighlights(summaries);
   renderReportTable();
-  const btn=document.getElementById('expandAllBtn');if(btn)btn.textContent='🔽 Sab Expand Karo';
+  const btn=document.getElementById('expandAllBtn');if(btn)btn.textContent='🔽 Expand All';
 }
 function computeQuickPct(staffId,dates,att){
   let present=0,workDays=0;
@@ -3458,7 +3514,7 @@ function setReportView(mode){
   document.getElementById('viewDayBtn').classList.toggle('active',mode==='day');
   document.getElementById('viewMatrixBtn').classList.toggle('active',mode==='matrix');
   renderReportTable();
-  const btn=document.getElementById('expandAllBtn');if(btn)btn.textContent='🔽 Sab Expand Karo';
+  const btn=document.getElementById('expandAllBtn');if(btn)btn.textContent='🔽 Expand All';
 }
 function quickFilterReport(range){
   const today=new Date();let from,to=toKey(today);
@@ -3480,11 +3536,11 @@ function renderHighlights(summaries){
 }
 function toggleAllReportRows(){
   const rows=document.querySelectorAll('#reportTable details.report-row');
-  if(!rows.length){showToast('Pehle report generate karo');return;}
+  if(!rows.length){showToast('Generate the report first');return;}
   const anyClosed=Array.from(rows).some(r=>!r.open);
   rows.forEach(r=>r.open=anyClosed);
   const btn=document.getElementById('expandAllBtn');
-  if(btn)btn.textContent=anyClosed?'🔼 Sab Collapse Karo':'🔽 Sab Expand Karo';
+  if(btn)btn.textContent=anyClosed?'🔼 Collapse All':'🔽 Expand All';
 }
 let salaryRevealed=false; // resets to hidden on every fresh page load — safest default
 function toggleSalaryReveal(){
@@ -4174,7 +4230,7 @@ function showVpsPhoto(staffId,dateKey,inout,stamp){
   // Attempt load with error fallback
   const test=new Image();
   test.onload=()=>{img.src=url;};
-  test.onerror=()=>{img.alt='';img.src='';showToast('❌ Photo VPS pe nahi mili (upload pending ya delete ho gaya)');};
+  test.onerror=()=>{img.alt='';img.src='';showToast('❌ Photo not found on the server (upload pending or deleted)');};
   test.src=url;
 }
 function renderMiniTable(rows,firstColLabel){
@@ -4191,7 +4247,7 @@ function renderMiniTable(rows,firstColLabel){
   }).join('')}</tbody></table>`;
 }
 function exportPayrollCSV(){
-  if(!lastReportData||!lastReportData.length){showToast('Pehle report generate karo');return;}
+  if(!lastReportData||!lastReportData.length){showToast('Generate the report first');return;}
   const rows=[['Name','Role','Salary Basis','Fixed Salary (₹)','Daily Rate (₹)','Working Days','Late','Early Out','Overtime','Absent','Unpaid Week-off/Holiday','Present','Half Day','Week-off/Holiday','Worked on Off-day','TOTAL PAYING DAYS','Gross Earned (₹)','PF Deduction (₹)','ESI Deduction (₹)','Net Pay (₹)']];
   lastReportData.forEach(s=>{rows.push([
     s.staff.name,s.staff.role||'',
@@ -4349,16 +4405,16 @@ function drawPayslipPage(doc,s,pl){
 }
 function downloadPayslipPDF(staffId){
   const s=lastReportData.find(x=>x.staff.id===staffId);
-  if(!s){showToast('Pehle report generate karo');return;}
-  if(typeof window.jspdf==='undefined'){showToast('PDF library load ho rahi hai, thoda ruk ke try karo');return;}
+  if(!s){showToast('Generate the report first');return;}
+  if(typeof window.jspdf==='undefined'){showToast('The PDF library is still loading. Please try again in a moment.');return;}
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
   drawPayslipPage(doc,s,periodLabel());
   doc.save('Payslip_'+s.staff.name.replace(/\s+/g,'_')+'.pdf');
 }
 function downloadFullPayrollPDF(){
-  if(!lastReportData.length){showToast('Pehle report generate karo');return;}
-  if(typeof window.jspdf==='undefined'){showToast('PDF library load ho rahi hai, thoda ruk ke try karo');return;}
+  if(!lastReportData.length){showToast('Generate the report first');return;}
+  if(typeof window.jspdf==='undefined'){showToast('The PDF library is still loading. Please try again in a moment.');return;}
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
   const pl=periodLabel();
@@ -4367,7 +4423,7 @@ function downloadFullPayrollPDF(){
 }
 function whatsappShareSummary(staffId){
   const s=lastReportData.find(x=>x.staff.id===staffId);
-  if(!s){showToast('Pehle report generate karo');return;}
+  if(!s){showToast('Generate the report first');return;}
   let msg='*Varnica Jewels — Attendance Summary*\n'+s.staff.name+' ('+(s.staff.role||'')+')\nPeriod: '+periodLabel()+'\n\n';
   msg+='✅ Present: '+s.present+' (⏰Late: '+s.late+', 🌅Early: '+s.earlyOut+', 🔵OT: '+s.overtime+')\n';
   msg+='🔶 Half Day: '+s.halfDay+'\n❌ Absent: '+s.absent+'\n📊 Attendance: '+s.pct+'%';
